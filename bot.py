@@ -833,5 +833,67 @@ async def main():
         await application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 # This block ensures `main()` is run when the script is executed by `python bot.py`
+# ... (all your existing imports, functions, and handlers go here,
+#      including init_firebase(), set_bot_commands(), etc.) ...
+
+# --- PTB Application Setup and Run Logic ---
+
 if __name__ == '__main__':
-    asyncio.run(main())
+    # Initialize Firebase once
+    print("--- Initializing Firebase ---")
+    init_firebase()
+    if firebase_db_ref is None:
+        print("FATAL: Firebase could not be initialized. Exiting.")
+        import sys
+        sys.exit(1) # Ensure the script exits if Firebase is critical
+
+    print("--- Setting up bot application ---")
+    application = Application.builder().token(BOT_TOKEN).build()
+
+    # Add handlers
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("register", register)],
+        states={
+            REGISTER_PES: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_pes_name)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_registration)],
+    )
+    application.add_handler(conv_handler)
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("rules", rules))
+    application.add_handler(CommandHandler("players", players_list))
+    application.add_handler(CommandHandler("addrule", addrule))
+    application.add_handler(CommandHandler("start_tournament", start_tournament))
+    application.add_handler(CommandHandler("fixtures", fixtures))
+    application.add_handler(CommandHandler("standings", group_standings))
+
+    # Dynamically add handlers for /matchX commands for admin scores
+    for i in range(1, 101): # Assuming up to 100 matches
+        application.add_handler(CommandHandler(f"match{i}", handle_score))
+
+    application.add_handler(CommandHandler("addscore", addscore))
+    application.add_handler(CommandHandler("reset_tournament", reset_tournament))
+
+
+    application.add_handler(CallbackQueryHandler(handle_team_selection, pattern=r"^team_select:"))
+
+    # Set bot commands (needs to be awaited, so we'll wrap the application run)
+    async def run_bot():
+        await set_bot_commands(application)
+
+        WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+        if WEBHOOK_URL:
+            print("--- Starting bot in webhook mode on port 8080 ---")
+            # Set the webhook on Telegram's side
+            await application.bot.set_webhook(url=WEBHOOK_URL)
+            # Run the webhook server
+            await application.run_webhook(listen="0.0.0.0", port=8080, url_path="webhook", webhook_url=WEBHOOK_URL)
+        else:
+            print("--- Starting bot in polling mode ---")
+            # Run the bot in polling mode (less ideal for Railway)
+            await application.run_polling(drop_pending_updates=True)
+
+    # This is the crucial change: Use asyncio.run() only once to kick off the main async process
+    # which itself then starts the bot's application server.
+    asyncio.run(run_bot())
