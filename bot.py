@@ -4,15 +4,15 @@ import random
 import os
 from collections import defaultdict
 import base64 # For decoding Firebase key
-import asyncio # Keep for async operations, but no direct run() in main
+import asyncio # Keep for async operations
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
-    Application, # Changed from ApplicationBuilder to Application after build
+    Application,
     CommandHandler, CallbackQueryHandler, MessageHandler, filters,
     ContextTypes, ConversationHandler
 )
-from flask import Flask, request, jsonify # Import jsonify for proper webhook responses
+# REMOVED: from flask import Flask, request, jsonify # No longer needed
 
 # Firebase Imports
 import firebase_admin
@@ -53,8 +53,7 @@ def init_firebase():
 
     if not FIREBASE_SERVICE_ACCOUNT_B64 or not FIREBASE_DATABASE_URL:
         print("Error: Firebase environment variables not set. Cannot initialize Firebase.")
-        # We will not exit here, but allow the Flask app to start.
-        # Errors will occur when trying to use load_state/save_state.
+        # We will not exit here, but allow the bot to start if not using DB features
         return
 
     try:
@@ -266,7 +265,7 @@ async def cancel_registration(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("ℹ️ No active registration to cancel.")
     return ConversationHandler.END
 
-async def set_bot_commands(application_instance): # Changed parameter name to avoid conflict
+async def set_bot_commands(application_instance):
     commands = [
         BotCommand("start", "Start the bot"),
         BotCommand("register", "Register for the tournament"),
@@ -769,87 +768,70 @@ async def reset_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Tournament data has been reset. Registrations are now open.")
     await context.bot.send_message(GROUP_ID, "📢 The tournament has been reset by the admin. Registrations are now open! Use /register to join.")
 
-# --- Flask App and PTB Application Setup ---
-app = Flask(__name__) # Your Flask app for Gunicorn
 
-# Initialize Firebase once when the module is loaded
-print("--- Initializing Firebase at module load ---")
-init_firebase()
-if firebase_db_ref is None:
-    print("WARNING: Firebase could not be initialized. Bot will run without database persistence.")
+# --- PTB Application Setup and Run Logic ---
 
-# Build the PTB Application instance
-# We need to run this outside of any if __name__ == '__main__': block
-# so it's initialized when Gunicorn imports the module.
-application = Application.builder().token(BOT_TOKEN).build()
-
-# Set bot commands (needs to be an async call, so we'll do it after app is ready)
-# Initialize the PTB Application (including setting bot commands)
-# This should run once when the application starts
-async def initialize_bot_application():
-    await set_bot_commands(application) # Call your existing set_bot_commands function
-    # Other PTB initialization tasks can go here if needed
-
-# This is a standard way to run an async startup task in Flask 3.x with Gunicorn
-@app.before_serving
-async def startup_event():
-    await initialize_bot_application()
-    print("--- Bot commands set on Telegram (via before_serving) ---")
-
-# Register handlers for the PTB Application
-conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(handle_team_selection, pattern=r"^team_select:")],
-    states={
-        REGISTER_PES: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_pes_name)],
-    },
-    fallbacks=[CommandHandler('cancel', cancel_registration)],
-    allow_reentry=True
-)
-
-application.add_handler(CommandHandler('start', start))
-application.add_handler(CommandHandler('register', register))
-application.add_handler(CommandHandler('fixtures', fixtures))
-application.add_handler(CommandHandler('standings', group_standings))
-application.add_handler(CommandHandler('addscore', addscore))
-application.add_handler(MessageHandler(filters.Regex(r"^/match[0-9]+ "), handle_score))
-application.add_handler(CommandHandler("addrule", addrule))
-application.add_handler(CommandHandler("rules", rules))
-application.add_handler(CommandHandler("players", players_list))
-application.add_handler(CommandHandler("start_tournament", start_tournament))
-application.add_handler(CommandHandler("reset_tournament", reset_tournament))
-application.add_handler(conv_handler)
-
-
-# --- Flask Routes to handle Webhooks ---
-@app.route('/')
-def home():
-    # Basic health check
-    return "Bot is running and listening for webhooks!"
-
-@app.route('/webhook', methods=['POST'])
-async def telegram_webhook():
-    print("--- DEBUG: Received webhook update ---")
-    await application.update_queue.put(Update.de_json(request.get_json(force=True), application.bot))
-    return jsonify({'status': 'ok'})
-
-# --- Main entry point for Gunicorn ---
-# Gunicorn will load the `app` Flask instance and start serving it.
-# The `application.run_webhook` or `application.run_polling` are *not* called here.
-# Instead, the Flask app (`app`) receives updates, and passes them to `application`.
-
-# This block is for local development if you run `python bot.py`
-if __name__ == '__main__':
-    print("--- Running in local development mode (polling) ---")
-    if not BOT_TOKEN:
-        print("Error: BOT_TOKEN not set for local development.")
-    
-    # Initialize Firebase if not already done (e.g., if imported as module first)
+async def main():
+    # Initialize Firebase once
+    print("--- Initializing Firebase ---")
+    init_firebase()
     if firebase_db_ref is None:
-         init_firebase()
-         if firebase_db_ref is None:
-             print("Fatal: Could not initialize Firebase for local run. Exiting.")
-             exit(1)
+        print("FATAL: Firebase could not be initialized. Exiting.")
+        # Exit or handle gracefully depending on if DB is strictly required for startup
+        return # Or sys.exit(1) if you want to stop the process
 
-    # For local development, we use polling.
-    # In production (Railway), the Flask app with the /webhook route will handle updates.
-    application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+    # Build the PTB Application instance
+    application = Application.builder().token(BOT_TOKEN).build()
+
+    # Register handlers
+    conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(handle_team_selection, pattern=r"^team_select:")],
+        states={
+            REGISTER_PES: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_pes_name)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel_registration)],
+        allow_reentry=True
+    )
+
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(CommandHandler('register', register))
+    application.add_handler(CommandHandler('fixtures', fixtures))
+    application.add_handler(CommandHandler('standings', group_standings))
+    application.add_handler(CommandHandler('addscore', addscore))
+    application.add_handler(MessageHandler(filters.Regex(r"^/match[0-9]+ "), handle_score))
+    application.add_handler(CommandHandler("addrule", addrule))
+    application.add_handler(CommandHandler("rules", rules))
+    application.add_handler(CommandHandler("players", players_list))
+    application.add_handler(CommandHandler("start_tournament", start_tournament))
+    application.add_handler(CommandHandler("reset_tournament", reset_tournament))
+    application.add_handler(conv_handler)
+
+    # Set bot commands (this will be done once on startup)
+    await set_bot_commands(application)
+
+    # Environment variables for webhook setup on Railway
+    WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+    PORT = int(os.environ.get("PORT", 8080)) # Railway provides a PORT env var
+
+    if WEBHOOK_URL and BOT_TOKEN:
+        # For Railway deployment (webhook mode)
+        print(f"--- Starting bot in webhook mode on port {PORT} ---")
+        # Ensure the webhook URL provided to Telegram includes the path
+        webhook_path = "/telegram-webhook" # Can be any unique path
+        full_webhook_url = f"{WEBHOOK_URL}{webhook_path}"
+        
+        await application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=webhook_path,
+            webhook_url=full_webhook_url,
+            drop_pending_updates=True # Good for fresh deployments
+        )
+    else:
+        # For local development (polling mode) or if WEBHOOK_URL/BOT_TOKEN not set
+        print("--- Starting bot in polling mode (local development or missing env vars) ---")
+        await application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+
+# This block ensures `main()` is run when the script is executed by `python bot.py`
+if __name__ == '__main__':
+    asyncio.run(main())
