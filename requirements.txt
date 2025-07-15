@@ -1,0 +1,4 @@
+python-telegram-bot==20.X.X # Use the latest stable version, e.g., 20.8
+Flask==3.0.3
+gunicorn==22.0.0
+firebase-admin==6.X.X # Use the latest stable version, e.g., 6.2.0
