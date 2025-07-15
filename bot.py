@@ -784,18 +784,17 @@ if firebase_db_ref is None:
 application = Application.builder().token(BOT_TOKEN).build()
 
 # Set bot commands (needs to be an async call, so we'll do it after app is ready)
-@app.before_first_request
-def setup_bot_commands():
-    # This runs once when the Flask app first starts.
-    # We use a new asyncio event loop for this if not already running.
-    # Alternatively, ensure application.initialize() handles this.
-    try:
-        asyncio.run(set_bot_commands(application))
-    except RuntimeError:
-        # If an event loop is already running (e.g., in some Flask development setups),
-        # run it on the existing loop.
-        application.loop.run_until_complete(set_bot_commands(application))
-    print("--- Bot commands set on Telegram ---")
+# Initialize the PTB Application (including setting bot commands)
+# This should run once when the application starts
+async def initialize_bot_application():
+    await set_bot_commands(application) # Call your existing set_bot_commands function
+    # Other PTB initialization tasks can go here if needed
+
+# This is a standard way to run an async startup task in Flask 3.x with Gunicorn
+@app.before_serving
+async def startup_event():
+    await initialize_bot_application()
+    print("--- Bot commands set on Telegram (via before_serving) ---")
 
 # Register handlers for the PTB Application
 conv_handler = ConversationHandler(
