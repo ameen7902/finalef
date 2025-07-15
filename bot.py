@@ -827,6 +827,33 @@ async def reset_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Main function for webhook setup ---
 async def start_webhook_app():
+    # ... (your existing imports and Flask app setup) ...
+
+async def start_webhook_app():
+    print("--- DEBUG: start_webhook_app function entered ---") # ADD THIS LINE
+
+    # The webhook URL provided by Railway.app (e.g., https://<YOUR_RAILWAY_APP_DOMAIN>.railway.app)
+    WEBHOOK_URL = os.environ.get("WEBHOOK_URL") 
+    PORT = int(os.environ.get("PORT", 8080))
+
+    if not BOT_TOKEN:
+        print("Error: BOT_TOKEN environment variable not set.")
+        return
+    if not WEBHOOK_URL:
+        print("Error: WEBHOOK_URL environment variable not set. This is crucial for Railway deployment.")
+        # Fallback to polling for local development if WEBHOOK_URL is not set
+        print("Falling back to polling for local development. For Railway, set WEBHOOK_URL.")
+        # ... (rest of your polling fallback code) ...
+
+    # Initialize Firebase connection before running the bot
+    init_firebase()
+    if firebase_db_ref is None: # If Firebase connection failed, stop
+        print("Fatal: Could not initialize Firebase. Exiting.") # YOU SHOULD SEE THIS IF FIREBASE FAILS
+        return
+
+    print("--- DEBUG: Firebase initialized, proceeding with webhook setup ---") # ADD THIS LINE IF FIREBASE SUCCEEDS
+
+    # ... (rest of your webhook setup code) ...
     # The webhook URL provided by Railway.app (e.g., https://<YOUR_RAILWAY_APP_DOMAIN>.railway.app)
     WEBHOOK_URL = os.environ.get("WEBHOOK_URL") 
     PORT = int(os.environ.get("PORT", 8080))
