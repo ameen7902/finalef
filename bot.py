@@ -4,45 +4,28 @@ import random
 import os
 from collections import defaultdict
 import base64 # For decoding Firebase key
+import asyncio # Keep for async operations, but no direct run() in main
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters,
+    Application, # Changed from ApplicationBuilder to Application after build
+    CommandHandler, CallbackQueryHandler, MessageHandler, filters,
     ContextTypes, ConversationHandler
 )
-from flask import Flask, request
-from threading import Thread
-import asyncio
+from flask import Flask, request, jsonify # Import jsonify for proper webhook responses
 
 # Firebase Imports
 import firebase_admin
 from firebase_admin import credentials, db
 
-# --- Flask App for Webhooks (Required for Railway.app deployment) ---
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Bot is running!"
-
-def run_flask_app():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
-
-def keep_alive_flask():
-    t = Thread(target=run_flask_app)
-    t.start()
-# --------------------------------------------------------------------
-
 # === CONFIG ===
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-GROUP_ID = int(os.environ.get("GROUP_ID", -1002835703789))
-ADMIN_ID = int(os.environ.get("ADMIN_ID", 7366894756))
+GROUP_ID = int(os.environ.get("GROUP_ID", -1002835703789)) # Default a placeholder ID
+ADMIN_ID = int(os.environ.get("ADMIN_ID", 7366894756)) # Default a placeholder ID
 
 # Firebase Configuration
-# This environment variable will hold the base64 encoded Firebase service account key
 FIREBASE_SERVICE_ACCOUNT_B64 = os.environ.get("FIREBASE_SERVICE_ACCOUNT_B64")
-FIREBASE_DATABASE_URL = os.environ.get("FIREBASE_DATABASE_URL") # e.g., "https://your-project-id-default-rtdb.firebaseio.com/"
+FIREBASE_DATABASE_URL = os.environ.get("FIREBASE_DATABASE_URL")
 
 # Global Firebase DB reference
 firebase_db_ref = None
@@ -70,33 +53,31 @@ def init_firebase():
 
     if not FIREBASE_SERVICE_ACCOUNT_B64 or not FIREBASE_DATABASE_URL:
         print("Error: Firebase environment variables not set. Cannot initialize Firebase.")
+        # We will not exit here, but allow the Flask app to start.
+        # Errors will occur when trying to use load_state/save_state.
         return
 
     try:
-        # Decode the base64 string back to JSON bytes
         service_account_info_bytes = base64.b64decode(FIREBASE_SERVICE_ACCOUNT_B64)
-        # Load the JSON bytes into a Python dict
         service_account_info = json.loads(service_account_info_bytes)
 
-        # Initialize Firebase app
         cred = credentials.Certificate(service_account_info)
         firebase_admin.initialize_app(cred, {
             'databaseURL': FIREBASE_DATABASE_URL
         })
-        firebase_db_ref = db.reference('/') # Get a reference to the root of your database
+        firebase_db_ref = db.reference('/')
         print("Successfully initialized Firebase!")
     except Exception as e:
         print(f"Error initializing Firebase: {e}")
-        firebase_db_ref = None # Indicate failure
+        firebase_db_ref = None
 
 def load_state(key, default_value=None):
     if not firebase_db_ref:
         print(f"Firebase not initialized for key {key}. Returning default.")
         return default_value if default_value is not None else {}
     try:
-        # Get data from a specific path in Firebase Realtime Database
         data = firebase_db_ref.child(key).get()
-        if data is None: # Firebase returns None if path doesn't exist
+        if data is None:
             return default_value if default_value is not None else {}
         return data
     except Exception as e:
@@ -108,18 +89,16 @@ def save_state(key, data):
         print(f"Firebase not initialized for key {key}. Cannot save data.")
         return
     try:
-        # Set data at a specific path in Firebase Realtime Database
         firebase_db_ref.child(key).set(data)
     except Exception as e:
         print(f"Error saving data to Firebase for key {key}: {e}")
 
 # === LOCKING SYSTEM (now in Firebase) ===
 def is_locked():
-    lock = load_state("lock") # Loads from Firebase
+    lock = load_state("lock")
     if not lock:
         return False
-    # Check for timeout (5 minutes)
-    if time.time() - lock.get("start_time", 0) > 300:
+    if time.time() - lock.get("start_time", 0) > 300: # 5 minutes timeout
         unlock_user()
         return False
     return True
@@ -147,7 +126,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 Welcome to the eFootball World Cup Tournament!\nUse /register to join.")
 
 async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    rules_list = load_state("rules_list", default_value=[]) # Load rules from Firebase
+    rules_list = load_state("rules_list", default_value=[])
     if not rules_list:
         await update.message.reply_text("ℹ️ No rules added yet. Admin can use /addrule.")
         return
@@ -231,7 +210,7 @@ def build_team_buttons():
         if len(row) == 2:
             keyboard.append(row)
             row = []
-    if row: # Add any remaining buttons
+    if row:
         keyboard.append(row)
     return keyboard
 
@@ -244,7 +223,7 @@ async def handle_team_selection(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("⚠️ You are not allowed to register now. Please wait your turn.")
         return ConversationHandler.END
 
-    team_full_name = query.data.split(':', 1)[1] # Extract team name from callback_data
+    team_full_name = query.data.split(':', 1)[1]
     set_selected_team(team_full_name)
 
     await query.edit_message_text(f"✅ Team selected: {team_full_name}\n\nNow send your PES username:")
@@ -266,7 +245,7 @@ async def receive_pes_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "username": user.username or "NoUsername",
         "team": team,
         "pes": pes_name,
-        "group": None, # Will be assigned later
+        "group": None,
         "stats": {"wins": 0, "draws": 0, "losses": 0, "gf": 0, "ga": 0, "points": 0, "gd": 0}
     }
 
@@ -287,7 +266,7 @@ async def cancel_registration(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("ℹ️ No active registration to cancel.")
     return ConversationHandler.END
 
-async def set_bot_commands(application):
+async def set_bot_commands(application_instance): # Changed parameter name to avoid conflict
     commands = [
         BotCommand("start", "Start the bot"),
         BotCommand("register", "Register for the tournament"),
@@ -301,7 +280,7 @@ async def set_bot_commands(application):
         BotCommand("addscore", "Admin: Add match scores"),
         BotCommand("reset_tournament", "Admin: Clear all tournament data"),
     ]
-    await application.bot.set_my_commands(commands)
+    await application_instance.bot.set_my_commands(commands)
     print("Bot commands set.")
 
 # === TOURNAMENT LOGIC ===
@@ -336,9 +315,8 @@ async def make_groups(context: ContextTypes.DEFAULT_TYPE):
     random.shuffle(player_ids)
 
     groups = defaultdict(list)
-    group_names = [f"Group {chr(65 + i)}" for i in range(8)] # Group A, B, C...
+    group_names = [f"Group {chr(65 + i)}" for i in range(8)]
 
-    # Assign players to groups
     for i, player_id in enumerate(player_ids):
         group_name = group_names[i % 8]
         groups[group_name].append(player_id)
@@ -355,14 +333,11 @@ async def make_group_fixtures(context: ContextTypes.DEFAULT_TYPE, groups: dict):
 
     for group_name, player_ids_in_group in groups.items():
         group_fixtures = []
-        # Round-robin: each player plays every other player once
-        # 4 teams in a group, so 3 matches per team = 6 matches per group
-        # (4 * 3) / 2 = 6
         for i in range(len(player_ids_in_group)):
             for j in range(i + 1, len(player_ids_in_group)):
                 player1_id = player_ids_in_group[i]
                 player2_id = player_ids_in_group[j]
-                group_fixtures.append([player1_id, player2_id, None, None]) # [p1_id, p2_id, score1, score2]
+                group_fixtures.append([player1_id, player2_id, None, None])
         group_stage_fixtures[group_name] = group_fixtures
 
     fixtures_data["group_stage"] = group_stage_fixtures
@@ -404,13 +379,12 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif current_stage in ["round_of_16", "quarter_finals", "semi_finals", "final"]:
         knockout_matches = fixtures_data.get(current_stage, [])
-        if not knockout_matches: # If no fixtures for this stage yet
+        if not knockout_matches:
             await update.message.reply_text("❌ Knockout matches for this stage are not yet drawn.")
             return
 
         reply_text += f"📅 Your Knockout Match - {player_info['team']}\n\n"
         for match in knockout_matches:
-            # Check if user is player1 or player2 in the match
             if user_id == match[0] or user_id == match[1]:
                 opponent_id = match[1] if match[0] == user_id else match[0]
                 opponent_info = players.get(opponent_id)
@@ -422,7 +396,7 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"🎮 Opponent: @{opponent_info['username']}\n"
                     )
                     found_fixture = True
-                break # A player only has one match in knockout round
+                break
 
     if found_fixture:
         await update.message.reply_text(reply_text, parse_mode='Markdown')
@@ -432,13 +406,13 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     players = load_state("players")
     groups_data = load_state("groups")
-
+    
     if not groups_data:
         await update.message.reply_text("❌ Groups have not been formed yet.")
         return
 
     all_standings = ""
-    for group_name in sorted(groups_data.keys()): # Ensure consistent order of groups
+    for group_name in sorted(groups_data.keys()):
         player_ids = groups_data[group_name]
         standings = []
         for p_id in player_ids:
@@ -454,31 +428,28 @@ async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "draws": stats.get("draws", 0),
                     "losses": stats.get("losses", 0)
                 })
-
-        # Sort by points, then goal difference, then goals for (descending)
+        
         standings.sort(key=lambda x: (x['points'], x['gd'], x['gf']), reverse=True)
 
         group_text = f"📊 *{group_name} Standings:*\n"
         group_text += "Team       | Pts | GD | GF | W-D-L\n"
         group_text += "--------------------------------------\n"
         for team_stat in standings:
-            # Pad team name for alignment
-            team_display = (team_stat['team'] + "         ")[:10] # Pad and truncate
+            team_display = (team_stat['team'] + "         ")[:10]
             group_text += (
                 f"{team_display} | {team_stat['points']:<3} | {team_stat['gd']:<2} | {team_stat['gf']:<2} | "
                 f"{team_stat['wins']}-{team_stat['draws']}-{team_stat['losses']}\n"
             )
         group_text += "\n"
         all_standings += group_text
-
+    
     if all_standings:
         await update.message.reply_text(all_standings, parse_mode='Markdown')
     else:
         await update.message.reply_text("❌ No standings available yet.")
 
 
-# Helper to get the current round's matches for admin score entry
-current_admin_matches = {} # Stores matches for /addscore options
+current_admin_matches = {}
 
 async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -495,14 +466,14 @@ async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     reply = f"📋 Matches for {current_stage.replace('_', ' ').title()}:\n\n"
-    current_admin_matches.clear() # Clear previous options
+    current_admin_matches.clear()
     idx = 1
 
     if current_stage == "group_stage":
         for group_name, matches in fixtures_data.get("group_stage", {}).items():
             for match in matches:
                 p1_id, p2_id, score1, score2 = match
-                if score1 is None: # Only list pending matches
+                if score1 is None:
                     p1 = players_data.get(p1_id)
                     p2 = players_data.get(p2_id)
                     if p1 and p2:
@@ -512,14 +483,14 @@ async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif current_stage in ["round_of_16", "quarter_finals", "semi_finals", "final"]:
         for match in fixtures_data.get(current_stage, []):
             p1_id, p2_id, score1, score2 = match
-            if score1 is None: # Only list pending matches
+            if score1 is None:
                 p1 = players_data.get(p1_id)
                 p2 = players_data.get(p2_id)
                 if p1 and p2:
                     current_admin_matches[f"match{idx}"] = {"type": "knockout", "stage": current_stage, "p1_id": p1_id, "p2_id": p2_id}
                     reply += f"/match{idx} → {p1['team']} vs {p2['team']} ({current_stage.replace('_', ' ').title()})\n"
                     idx += 1
-
+    
     if not current_admin_matches:
         reply = "✅ All matches for this stage are completed. Use /start_tournament (if admin) to advance or /addscore later for next stage."
 
@@ -528,7 +499,7 @@ async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
-        return # Not authorized
+        return
 
     text = update.message.text.lower().strip()
     try:
@@ -537,7 +508,7 @@ async def handle_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raise ValueError("Score not provided")
 
         cmd, score_str = cmd_parts
-        match_key = cmd[1:] # e.g., "match1"
+        match_key = cmd[1:]
         goals = score_str.split("-")
         if len(goals) != 2:
             raise ValueError("Invalid score format")
@@ -552,15 +523,13 @@ async def handle_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         match_type = match_info["type"]
         p1_id = match_info["p1_id"]
-        p2_id = match_info["p1_id"] # Fix: This was p1_id, should be p2_id. Corrected below.
-        p2_id = match_info["p2_id"] # Corrected line
+        p2_id = match_info["p2_id"]
 
         if match_type == "group":
             await handle_group_score(update, context, match_info["group"], p1_id, p2_id, score1, score2)
         elif match_type == "knockout":
             await handle_knockout_score(update, context, match_info["stage"], p1_id, p2_id, score1, score2)
 
-        # Clear this match from current_admin_matches to prevent re-submission
         if match_key in current_admin_matches:
             del current_admin_matches[match_key]
 
@@ -575,25 +544,22 @@ async def handle_group_score(update: Update, context: ContextTypes.DEFAULT_TYPE,
     fixtures_data = load_state("fixtures")
     players = load_state("players")
 
-    # Find and update the score in fixtures_data
     group_matches = fixtures_data["group_stage"][group_name]
     match_found = False
     for i, match in enumerate(group_matches):
-        # Identify the match regardless of player order in stored list
         if (match[0] == p1_id and match[1] == p2_id):
             group_matches[i] = [p1_id, p2_id, score1, score2]
             match_found = True
             break
-        elif (match[0] == p2_id and match[1] == p1_id): # If players were swapped in storage
-            group_matches[i] = [p2_id, p1_id, score2, score1] # Ensure consistent storage order
+        elif (match[0] == p2_id and match[1] == p1_id):
+            group_matches[i] = [p2_id, p1_id, score2, score1]
             match_found = True
             break
-
+    
     if not match_found:
         await update.message.reply_text("❌ Error: Group match not found in fixtures.")
         return
 
-    # Update player stats
     player1_stats = players[p1_id]["stats"]
     player2_stats = players[p2_id]["stats"]
 
@@ -615,13 +581,13 @@ async def handle_group_score(update: Update, context: ContextTypes.DEFAULT_TYPE,
         player2_stats["points"] += 3
         player1_stats["losses"] += 1
         winner_name = players[p2_id]['team']
-    else: # Draw
+    else:
         player1_stats["draws"] += 1
         player1_stats["points"] += 1
         player2_stats["draws"] += 1
         player2_stats["points"] += 1
         winner_name = "Draw"
-
+    
     players[p1_id]["stats"] = player1_stats
     players[p2_id]["stats"] = player2_stats
 
@@ -631,16 +597,15 @@ async def handle_group_score(update: Update, context: ContextTypes.DEFAULT_TYPE,
     await update.message.reply_text(f"✅ Score {score1}-{score2} recorded for {players[p1_id]['team']} vs {players[p2_id]['team']}. Winner: {winner_name}.")
     await context.bot.send_message(GROUP_ID, f"⚽️ *Group Match Result:* {players[p1_id]['team']} {score1} - {score2} {players[p2_id]['team']}\n_Check /standings for updates._", parse_mode='Markdown')
 
-    # Check if all group matches are done
     all_group_matches_completed = True
     for group_matches_list in fixtures_data["group_stage"].values():
         for match in group_matches_list:
-            if match[2] is None: # If score is null
+            if match[2] is None:
                 all_group_matches_completed = False
                 break
         if not all_group_matches_completed:
             break
-
+    
     if all_group_matches_completed:
         await context.bot.send_message(ADMIN_ID, "All group stage matches completed! Initiating knockout stage.")
         await advance_to_knockout(context)
@@ -652,40 +617,27 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     fixtures_data = load_state("fixtures")
     tournament_state = load_state("tournament_state")
 
-    all_qualified_sorted = [] # Stores (player_id, player_info) for top 2 from each group, sorted for pairing
+    all_qualified_sorted = []
 
-    for group_name in sorted(groups_data.keys()): # Iterate through groups in alphabetical order
+    for group_name in sorted(groups_data.keys()):
         group_players_ids = groups_data[group_name]
-
+        
         standings_for_group = []
         for p_id in group_players_ids:
             player_info = players.get(p_id)
             if player_info:
                 standings_for_group.append((p_id, player_info))
-
-        # Sort group teams by points, then GD, then GF (descending)
+        
         standings_for_group.sort(key=lambda x: (x[1]['stats']['points'], x[1]['stats']['gd'], x[1]['stats']['gf']), reverse=True)
-
-        # Add top 2 players from this group to the overall sorted list
+        
         all_qualified_sorted.extend(standings_for_group[:2])
-
-    # Now all_qualified_sorted should be:
-    # [1A, 2A, 1B, 2B, 1C, 2C, 1D, 2D, 1E, 2E, 1F, 2F, 1G, 2G, 1H, 2H]
-
+    
     r16_matchups = []
-    # Standard World Cup R16 pairings based on group positions
-    # 1A vs 2B, 1C vs 2D, 1E vs 2F, 1G vs 2H
-    # 1B vs 2A, 1D vs 2C, 1F vs 2E, 1H vs 2G
-
-    # Indices in all_qualified_sorted:
-    # 0=1A, 1=2A, 2=1B, 3=2B, 4=1C, 5=2C, 6=1D, 7=2D,
-    # 8=1E, 9=2E, 10=1F, 11=2F, 12=1G, 13=2G, 14=1H, 15=2H
-
     r16_matchups.append([all_qualified_sorted[0][0], all_qualified_sorted[3][0], None, None]) # 1A vs 2B
     r16_matchups.append([all_qualified_sorted[4][0], all_qualified_sorted[7][0], None, None]) # 1C vs 2D
     r16_matchups.append([all_qualified_sorted[8][0], all_qualified_sorted[11][0], None, None]) # 1E vs 2F
     r16_matchups.append([all_qualified_sorted[12][0], all_qualified_sorted[15][0], None, None]) # 1G vs 2H
-
+    
     r16_matchups.append([all_qualified_sorted[2][0], all_qualified_sorted[1][0], None, None]) # 1B vs 2A
     r16_matchups.append([all_qualified_sorted[6][0], all_qualified_sorted[5][0], None, None]) # 1D vs 2C
     r16_matchups.append([all_qualified_sorted[10][0], all_qualified_sorted[9][0], None, None]) # 1F vs 2E
@@ -702,7 +654,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
 async def notify_knockout_matches(context: ContextTypes.DEFAULT_TYPE, stage: str):
     fixtures_data = load_state("fixtures")
     players_data = load_state("players")
-
+    
     matches = fixtures_data.get(stage, [])
     if not matches:
         return
@@ -730,7 +682,6 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
     winner_id = p1_id if score1 > score2 else p2_id
     loser_id = p2_id if score1 > score2 else p1_id
 
-    # Update score in current stage's fixtures
     current_matches = fixtures_data.get(stage, [])
     match_found_and_updated = False
     for i, match in enumerate(current_matches):
@@ -738,11 +689,11 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
             current_matches[i] = [p1_id, p2_id, score1, score2]
             match_found_and_updated = True
             break
-        elif (match[0] == p2_id and match[1] == p1_id): # If players were swapped in storage
-            current_matches[i] = [p2_id, p1_id, score2, score1] # Ensure consistent storage order
+        elif (match[0] == p2_id and match[1] == p1_id):
+            current_matches[i] = [p2_id, p1_id, score2, score1]
             match_found_and_updated = True
             break
-
+    
     if not match_found_and_updated:
         await update.message.reply_text("❌ Error: Knockout match not found or already processed in fixtures.")
         return
@@ -756,16 +707,13 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
     await update.message.reply_text(f"✅ Score {score1}-{score2} recorded for {winner_info['team']} vs {loser_info['team']}. {winner_info['team']} advances!")
     await context.bot.send_message(GROUP_ID, f"🔥 *Knockout Result ({stage.replace('_', ' ').title()}):* {winner_info['team']} {score1} - {score2} {loser_info['team']}\n*{winner_info['team']}* advances!", parse_mode='Markdown')
 
-
-    # Check if all matches in current stage are completed
     all_matches_completed = True
     for match in current_matches:
-        if match[2] is None: # If score is null
+        if match[2] is None:
             all_matches_completed = False
             break
-
+    
     if all_matches_completed:
-        # Advance to next stage
         next_stage = ""
         if stage == "round_of_16":
             next_stage = "quarter_finals"
@@ -775,30 +723,28 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
             next_stage = "final"
         elif stage == "final":
             next_stage = "completed"
-
+        
         if next_stage == "completed":
             await context.bot.send_message(GROUP_ID, f"🏆 Tournament Concluded! The Champion is {winner_info['team']} (@{winner_info['username']})!")
             tournament_state["stage"] = "completed"
             save_state("tournament_state", tournament_state)
             return
 
-        # Prepare for next stage: collect winners
         winners_of_current_stage = []
         for match in current_matches:
             if match[2] is not None and match[3] is not None:
                 winner = match[0] if match[2] > match[3] else match[1]
                 winners_of_current_stage.append(winner)
-
-        random.shuffle(winners_of_current_stage) # Shuffle for new pairings (important for quarterfinals/semis)
+        
+        random.shuffle(winners_of_current_stage)
 
         next_stage_fixtures = []
         for i in range(0, len(winners_of_current_stage), 2):
-            if i + 1 < len(winners_of_current_stage): # Ensure pairs
+            if i + 1 < len(winners_of_current_stage):
                 next_stage_fixtures.append([winners_of_current_stage[i], winners_of_current_stage[i+1], None, None])
             else:
                 print(f"Warning: Odd number of winners for {next_stage}. This should not happen in a perfect bracket.")
-                # Handle bye, or error, depending on tournament size
-
+        
         fixtures_data[next_stage] = next_stage_fixtures
         tournament_state["stage"] = next_stage
         save_state("fixtures", fixtures_data)
@@ -813,135 +759,98 @@ async def reset_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Only the admin can reset the tournament.")
         return
 
-    # Clear all relevant data from Firebase
     save_state("players", {})
     save_state("groups", {})
     save_state("fixtures", {})
     save_state("lock", {})
     save_state("tournament_state", {"stage": "registration"})
-    save_state("rules_list", []) # Clear rules as well
+    save_state("rules_list", [])
 
     await update.message.reply_text("✅ Tournament data has been reset. Registrations are now open.")
     await context.bot.send_message(GROUP_ID, "📢 The tournament has been reset by the admin. Registrations are now open! Use /register to join.")
 
+# --- Flask App and PTB Application Setup ---
+app = Flask(__name__) # Your Flask app for Gunicorn
 
-# --- Main function for webhook setup ---
-async def start_webhook_app():
-    # ... (your existing imports and Flask app setup) ...
+# Initialize Firebase once when the module is loaded
+print("--- Initializing Firebase at module load ---")
+init_firebase()
+if firebase_db_ref is None:
+    print("WARNING: Firebase could not be initialized. Bot will run without database persistence.")
 
-async def start_webhook_app():
-    print("--- DEBUG: start_webhook_app function entered ---") # ADD THIS LINE
+# Build the PTB Application instance
+# We need to run this outside of any if __name__ == '__main__': block
+# so it's initialized when Gunicorn imports the module.
+application = Application.builder().token(BOT_TOKEN).build()
 
-    # The webhook URL provided by Railway.app (e.g., https://<YOUR_RAILWAY_APP_DOMAIN>.railway.app)
-    WEBHOOK_URL = os.environ.get("WEBHOOK_URL") 
-    PORT = int(os.environ.get("PORT", 8080))
+# Set bot commands (needs to be an async call, so we'll do it after app is ready)
+@app.before_first_request
+def setup_bot_commands():
+    # This runs once when the Flask app first starts.
+    # We use a new asyncio event loop for this if not already running.
+    # Alternatively, ensure application.initialize() handles this.
+    try:
+        asyncio.run(set_bot_commands(application))
+    except RuntimeError:
+        # If an event loop is already running (e.g., in some Flask development setups),
+        # run it on the existing loop.
+        application.loop.run_until_complete(set_bot_commands(application))
+    print("--- Bot commands set on Telegram ---")
 
-    if not BOT_TOKEN:
-        print("Error: BOT_TOKEN environment variable not set.")
-        return
-    if not WEBHOOK_URL:
-        print("Error: WEBHOOK_URL environment variable not set. This is crucial for Railway deployment.")
-        # Fallback to polling for local development if WEBHOOK_URL is not set
-        print("Falling back to polling for local development. For Railway, set WEBHOOK_URL.")
-        # ... (rest of your polling fallback code) ...
+# Register handlers for the PTB Application
+conv_handler = ConversationHandler(
+    entry_points=[CallbackQueryHandler(handle_team_selection, pattern=r"^team_select:")],
+    states={
+        REGISTER_PES: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_pes_name)],
+    },
+    fallbacks=[CommandHandler('cancel', cancel_registration)],
+    allow_reentry=True
+)
 
-    # Initialize Firebase connection before running the bot
-    init_firebase()
-    if firebase_db_ref is None: # If Firebase connection failed, stop
-        print("Fatal: Could not initialize Firebase. Exiting.") # YOU SHOULD SEE THIS IF FIREBASE FAILS
-        return
+application.add_handler(CommandHandler('start', start))
+application.add_handler(CommandHandler('register', register))
+application.add_handler(CommandHandler('fixtures', fixtures))
+application.add_handler(CommandHandler('standings', group_standings))
+application.add_handler(CommandHandler('addscore', addscore))
+application.add_handler(MessageHandler(filters.Regex(r"^/match[0-9]+ "), handle_score))
+application.add_handler(CommandHandler("addrule", addrule))
+application.add_handler(CommandHandler("rules", rules))
+application.add_handler(CommandHandler("players", players_list))
+application.add_handler(CommandHandler("start_tournament", start_tournament))
+application.add_handler(CommandHandler("reset_tournament", reset_tournament))
+application.add_handler(conv_handler)
 
-    print("--- DEBUG: Firebase initialized, proceeding with webhook setup ---") # ADD THIS LINE IF FIREBASE SUCCEEDS
 
-    # ... (rest of your webhook setup code) ...
-    # The webhook URL provided by Railway.app (e.g., https://<YOUR_RAILWAY_APP_DOMAIN>.railway.app)
-    WEBHOOK_URL = os.environ.get("WEBHOOK_URL") 
-    PORT = int(os.environ.get("PORT", 8080))
+# --- Flask Routes to handle Webhooks ---
+@app.route('/')
+def home():
+    # Basic health check
+    return "Bot is running and listening for webhooks!"
 
-    if not BOT_TOKEN:
-        print("Error: BOT_TOKEN environment variable not set.")
-        return
-    if not WEBHOOK_URL:
-        print("Error: WEBHOOK_URL environment variable not set. This is crucial for Railway deployment.")
-        # Fallback to polling for local development if WEBHOOK_URL is not set
-        print("Falling back to polling for local development. For Railway, set WEBHOOK_URL.")
-        application = ApplicationBuilder().token(BOT_TOKEN).build()
-        await set_bot_commands(application) # Await the async function
+@app.route('/webhook', methods=['POST'])
+async def telegram_webhook():
+    print("--- DEBUG: Received webhook update ---")
+    await application.update_queue.put(Update.de_json(request.get_json(force=True), application.bot))
+    return jsonify({'status': 'ok'})
 
-        # Add all handlers
-        conv_handler = ConversationHandler(
-            entry_points=[CallbackQueryHandler(handle_team_selection, pattern=r"^team_select:")],
-            states={
-                REGISTER_PES: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_pes_name)],
-            },
-            fallbacks=[CommandHandler('cancel', cancel_registration)],
-            allow_reentry=True
-        )
-        application.add_handler(CommandHandler('start', start))
-        application.add_handler(CommandHandler('register', register))
-        application.add_handler(CommandHandler('fixtures', fixtures))
-        application.add_handler(CommandHandler('standings', group_standings))
-        application.add_handler(CommandHandler('addscore', addscore))
-        application.add_handler(MessageHandler(filters.Regex(r"^/match[0-9]+ "), handle_score))
-        application.add_handler(CommandHandler("addrule", addrule))
-        application.add_handler(CommandHandler("rules", rules))
-        application.add_handler(CommandHandler("players", players_list))
-        application.add_handler(CommandHandler("start_tournament", start_tournament))
-        application.add_handler(CommandHandler("reset_tournament", reset_tournament))
-        application.add_handler(conv_handler)
+# --- Main entry point for Gunicorn ---
+# Gunicorn will load the `app` Flask instance and start serving it.
+# The `application.run_webhook` or `application.run_polling` are *not* called here.
+# Instead, the Flask app (`app`) receives updates, and passes them to `application`.
 
-        application.run_polling()
-        return
-
-    # Initialize Firebase connection before running the bot
-    init_firebase()
-    if firebase_db_ref is None: # If Firebase connection failed, stop
-        print("Fatal: Could not initialize Firebase. Exiting.")
-        return
-
-    # Use python-telegram-bot's webhook functionalities
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    # Set commands only once at startup
-    await set_bot_commands(application) # Await the async function
-
-    # Conversation Handler for Registration
-    conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(handle_team_selection, pattern=r"^team_select:")],
-        states={
-            REGISTER_PES: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_pes_name)],
-        },
-        fallbacks=[CommandHandler('cancel', cancel_registration)],
-        allow_reentry=True
-    )
-
-    # Register handlers
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(CommandHandler('register', register))
-    application.add_handler(CommandHandler('fixtures', fixtures))
-    application.add_handler(CommandHandler('standings', group_standings))
-    application.add_handler(CommandHandler('addscore', addscore))
-    application.add_handler(MessageHandler(filters.Regex(r"^/match[0-9]+ "), handle_score))
-    application.add_handler(CommandHandler("addrule", addrule))
-    application.add_handler(CommandHandler("rules", rules))
-    application.add_handler(CommandHandler("players", players_list))
-    application.add_handler(CommandHandler("start_tournament", start_tournament))
-    application.add_handler(CommandHandler("reset_tournament", reset_tournament))
-    application.add_handler(conv_handler)
-
-    # Start the Flask app in a separate thread.
-    # This thread will serve the root URL '/' for health checks,
-    # but the Telegram bot's `run_webhook` will handle the '/webhook' path.
-    keep_alive_flask()
-
-    # Start the webhook
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path="", # This means the webhook URL is base URL + /
-        webhook_url=WEBHOOK_URL # The full URL Telegram sends updates to (Railway provides this)
-    )
-
+# This block is for local development if you run `python bot.py`
 if __name__ == '__main__':
-    # Run the async main function
-    asyncio.run(start_webhook_app())
+    print("--- Running in local development mode (polling) ---")
+    if not BOT_TOKEN:
+        print("Error: BOT_TOKEN not set for local development.")
+    
+    # Initialize Firebase if not already done (e.g., if imported as module first)
+    if firebase_db_ref is None:
+         init_firebase()
+         if firebase_db_ref is None:
+             print("Fatal: Could not initialize Firebase for local run. Exiting.")
+             exit(1)
+
+    # For local development, we use polling.
+    # In production (Railway), the Flask app with the /webhook route will handle updates.
+    application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
