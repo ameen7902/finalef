@@ -488,10 +488,10 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fixtures_data = load_state("fixtures")
     tournament_state = load_state("tournament_state")
     current_stage = tournament_state.get("stage", "registration")
-    current_group_round = tournament_state.get("group_match_round", 0) # NEW: Get current round
+    current_group_round = tournament_state.get("group_match_round", 0)
 
     if user_id not in players:
-        await update.message.reply_text("❌ You are not registered for the tournament. Use /register.")
+        await update.message.reply_text("❌ You are not registered for the tournament\. Use /register\.", parse_mode=ParseMode.MARKDOWN_V2)
         print(f"DEBUG: User {user_id} not in players.")
         return
 
@@ -505,128 +505,156 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"DEBUG: User {user_id}'s group: {player_group}")
 
         if not player_group or player_group not in fixtures_data.get("group_stage", {}):
-            await update.message.reply_text("❌ Your group fixtures are not yet available.")
+            await update.message.reply_text("❌ Your group fixtures are not yet available\.", parse_mode=ParseMode.MARKDOWN_V2)
             print(f"DEBUG: Group '{player_group}' not found in fixtures_data group_stage.")
             return
 
-        reply_text += f"📅 Your Group Matches - {escape_markdown_v2(player_info['team'])} ({escape_markdown_v2(player_info['group'] or 'No Group')}) - Match {current_group_round + 1}\n\n"
+        # Escape header elements
+        escaped_player_team_header = escape_markdown_v2(player_info.get('team', ''))
+        escaped_player_group_header = escape_markdown_v2(player_info.get('group', 'No Group'))
+        reply_text += f"📅 Your Group Matches \- {escaped_player_team_header} \({escaped_player_group_header}\) \- Match {escape_markdown_v2(str(current_group_round + 1))}\n\n"
+
         group_matches = fixtures_data["group_stage"][player_group]
         print(f"DEBUG: Group '{player_group}' matches loaded: {json.dumps(group_matches, indent=2)}")
 
         if not group_matches:
+            reply_text = "❌ No matches found for your group\."
+            await update.message.reply_text(reply_text, parse_mode=ParseMode.MARKDOWN_V2)
             print(f"DEBUG: Group '{player_group}' has no matches listed.")
+            return
 
+        current_round_matches_for_user = []
         for match_index, match in enumerate(group_matches):
-            # Ensure match has enough elements (now 5 for round_number)
-            if not isinstance(match, list) or len(match) < 5: # Changed from < 2 or < 4 to < 5
+            if not isinstance(match, list) or len(match) < 5:
                 print(f"WARNING: Malformed match data (too short) in Firebase for Group {player_group}, Match index {match_index}: {match}")
                 continue
 
-            # NEW: Check if this match belongs to the current round
-            if match[4] != current_group_round: # match[4] is the round_number
-                print(f"DEBUG: Skipping match {match_index} as it belongs to round {match[4]}, not current round {current_group_round}.")
-                continue # Skip to the next match if not for the current round
+            # Check if this match belongs to the current round
+            if match[4] == current_group_round: # match[4] is the round_number
+                if user_id in match[0:2]:
+                    current_round_matches_for_user.append(match)
+                    found_fixture = True # At least one match for the user in this round
 
-            print(f"DEBUG: Processing match {match_index}: {match}")
-            if user_id in match[0:2]:
-                opponent_id = match[1] if match[0] == user_id else match[0]
-                print(f"DEBUG: Found user {user_id} in match {match_index}. Opponent ID: {opponent_id}")
-                opponent_info = players.get(opponent_id)
-                print(f"DEBUG: Opponent info for {opponent_id}: {opponent_info}")
-
-                if opponent_info:
-                    # Check if match has score placeholders before accessing them
-                    # Note: Scores are still match[2] and match[3]
-                    if match[2] is not None and match[3] is not None:
-                        score_status = f"({match[2]}-{match[3]})"
-                        # If match is finished, display as scoreboard
-                        reply_text += (
-                            f"🏆 Match Result (Round {match[4] + 1}):\n"
-                            f"*{escape_markdown_v2(player_info['team'])} {match[2]} - {match[3]} {escape_markdown_v2(opponent_info['team'])}*\n"
-                            f"🎮 Opponent: @{escape_markdown_v2(opponent_info['username'])}\n"
-                        )
-                    else:
-                        score_status = "(Pending)"
-                        # If match is pending
-                        reply_text += (
-                            f"MATCHDAY ( {match[4] + 1}):\n"
-                            f"{escape_markdown_v2(player_info['team'])} vs {escape_markdown_v2(opponent_info['team'])} {score_status}\n"
-                            f"🎮 Opponent: @{escape_markdown_v2(opponent_info['username'])}\n"
-                        )
-                    found_fixture = True
-                    print(f"DEBUG: Fixture found and added to reply for {user_id}. Match: {match}")
-                else:
-                    print(f"DEBUG: Opponent {opponent_id} not found in 'players' data.")
-            else:
-                print(f"DEBUG: User {user_id} not in match {match_index}'s player IDs ({match[0]}, {match[1]}).")
-
-        # Check if current user has any active matches for the current round
-        if not found_fixture:
-            # If found_fixture is still False after checking all matches in the current round,
-            # it means the user has no match *for this specific round* or all their matches are complete.
-            # Since we are only showing ONE match now, this needs refinement if a user
-            # has multiple matches for one round (which they shouldn't with the round-robin logic).
-            # For now, if no match found for this user in this round, it means they might have already
-            # reported their score for this specific round, or the admin needs to advance the round.
-            await update.message.reply_text("✅ Your match for this round is completed or you have no active match for the current round. Please wait for the admin to advance to the next round.")
+        if not current_round_matches_for_user:
+            # If no matches found specifically for the user in the current round
+            await update.message.reply_text("✅ Your match for this round is completed or you have no active match for the current round\. Please wait for the admin to advance to the next round\.", parse_mode=ParseMode.MARKDOWN_V2)
             print(f"DEBUG: No active match found for {user_id} in Round {current_group_round}.")
+            return # Exit after sending this specific message
+
+        # Now, iterate only through the matches relevant to the user for the current round
+        for match in current_round_matches_for_user:
+            opponent_id = match[1] if match[0] == user_id else match[0]
+            opponent_info = players.get(opponent_id)
+
+            if opponent_info:
+                # Escape all dynamic text that goes into the reply
+                escaped_player_team = escape_markdown_v2(player_info.get('team', ''))
+                escaped_opponent_team = escape_markdown_v2(opponent_info.get('team', ''))
+                escaped_opponent_username = escape_markdown_v2(opponent_info.get('username', ''))
+
+                if match[2] is not None and match[3] is not None:
+                    # If match is finished, display as scoreboard
+                    reply_text += (
+                        f"🏆 Match Result \(Round {escape_markdown_v2(str(match[4] + 1))}\):\n"
+                        f"*{escaped_player_team} {match[2]} \- {match[3]} {escaped_opponent_team}*\n"
+                        f"🎮 Opponent: @{escaped_opponent_username}\n\n"
+                    )
+                else:
+                    # If match is pending
+                    reply_text += (
+                        f"MATCHDAY \( {escape_markdown_v2(str(match[4] + 1))}\):\n"
+                        f"{escaped_player_team} vs {escaped_opponent_team} \(Pending\)\n"
+                        f"🎮 Opponent: @{escaped_opponent_username}\n\n"
+                    )
+            else:
+                print(f"DEBUG: Opponent {opponent_id} not found in 'players' data.")
+                # Consider adding a message for this case if it's a common occurrence
+                escaped_player_team = escape_markdown_v2(player_info.get('team', ''))
+                reply_text += f"MATCHDAY \( {escape_markdown_v2(str(match[4] + 1))}\):\n" \
+                              f"{escaped_player_team} vs Unknown Opponent \(Pending\)\n" \
+                              f"🎮 Opponent: @unknown\n\n" # Fallback if username is missing
 
 
     elif current_stage in ["round_of_16", "quarter_finals", "semi_finals", "final"]:
         knockout_matches = fixtures_data.get(current_stage, [])
         if not knockout_matches:
-            reply_text = "❌ Knockout matches for this stage are not yet drawn."
+            await update.message.reply_text("❌ Knockout matches for this stage are not yet drawn\.", parse_mode=ParseMode.MARKDOWN_V2)
             print(f"DEBUG: No knockout matches for stage {current_stage}.")
-            # No return here, let the final `if reply_text:` handle it
-        else:
-            # Header for knockout stage matches
-            # Apply escape_markdown_v2 for the header too
-            reply_text += f"📅 Your Knockout Match - {escape_markdown_v2(player_info['team'])} ({escape_markdown_v2(current_stage.replace('_', ' ').title())})\n\n"
-            
-            for match_index, match in enumerate(knockout_matches):
-                if not isinstance(match, list) or len(match) < 4: # Assuming knockout matches are 4 elements
-                    print(f"WARNING: Malformed knockout match data (too short) in Firebase for stage {current_stage}, Match index {match_index}: {match}")
-                    continue
+            return
 
-                print(f"DEBUG: Processing knockout match {match_index}: {match}")
-                if user_id == match[0] or user_id == match[1]:
-                    opponent_id = match[1] if match[0] == user_id else match[0]
-                    opponent_info = players.get(opponent_id)
-                    print(f"DEBUG: Opponent info for {opponent_id}: {opponent_info}")
+        # Header for knockout stage matches
+        stage_title_escaped_header = escape_markdown_v2(current_stage.replace('_', ' ').title())
+        player_team_escaped_header = escape_markdown_v2(player_info.get('team', ''))
+        reply_text += f"📅 Your Knockout Match \- {player_team_escaped_header} \({stage_title_escaped_header}\)\n\n"
 
-                    if opponent_info:
-                        # --- THIS IS THE CRITICAL CHANGE: APPLY escape_markdown_v2 HERE ---
-                        player_team_escaped = escape_markdown_v2(player_info['team'])
-                        opponent_team_escaped = escape_markdown_v2(opponent_info['team'])
-                        opponent_username_escaped = escape_markdown_v2(opponent_info['username'])
-                        stage_title_escaped = escape_markdown_v2(current_stage.replace('_', ' ').title())
+        for match_index, match in enumerate(knockout_matches):
+            if not isinstance(match, list) or len(match) < 4: # Assuming knockout matches are 4 elements
+                print(f"WARNING: Malformed knockout match data (too short) in Firebase for stage {current_stage}, Match index {match_index}: {match}")
+                continue
 
-                        if match[2] is not None and match[3] is not None:
-                            # If match is finished, display as scoreboard
-                            reply_text += (
-                                f"🏆 Match Result (*{stage_title_escaped}*):\n"
-                                f"*{player_team_escaped} {match[2]} - {match[3]} {opponent_team_escaped}*\n"
-                                f"🎮 Opponent: @{opponent_username_escaped}\n\n" # Added newline for spacing
-                            )
-                        else:
-                            # If match is pending
-                            reply_text += (
-                                f"📅 Your Match (*{stage_title_escaped}*):\n"
-                                f"{player_team_escaped} vs {opponent_team_escaped} (Pending)\n"
-                                f"🎮 Opponent: @{opponent_username_escaped}\n\n" # Added newline for spacing
-                            )
-                        found_fixture = True
-                        print(f"DEBUG: Fixture found and added to reply for {user_id}.")
+            print(f"DEBUG: Processing knockout match {match_index}: {match}")
+            if user_id == match[0] or user_id == match[1]:
+                opponent_id = match[1] if match[0] == user_id else match[0]
+                opponent_info = players.get(opponent_id)
+                print(f"DEBUG: Opponent info for {opponent_id}: {opponent_info}")
+
+                if opponent_info:
+                    # Escape all dynamic text that goes into the reply
+                    player_team_escaped = escape_markdown_v2(player_info.get('team', ''))
+                    opponent_team_escaped = escape_markdown_v2(opponent_info.get('team', ''))
+                    opponent_username_escaped = escape_markdown_v2(opponent_info.get('username', ''))
+                    stage_title_escaped = escape_markdown_v2(current_stage.replace('_', ' ').title())
+
+                    if match[2] is not None and match[3] is not None:
+                        # If match is finished, display as scoreboard
+                        reply_text += (
+                            f"🏆 Match Result \(*{stage_title_escaped}*\):\n"
+                            f"*{player_team_escaped} {match[2]} \- {match[3]} {opponent_team_escaped}*\n"
+                            f"🎮 Opponent: @{opponent_username_escaped}\n\n"
+                        )
                     else:
-                        print(f"DEBUG: Opponent {opponent_id} not found in 'players' data for knockout match.")
+                        # If match is pending
+                        reply_text += (
+                            f"📅 Your Match \(*{stage_title_escaped}*\):\n"
+                            f"{player_team_escaped} vs {opponent_team_escaped} \(Pending\)\n"
+                            f"🎮 Opponent: @{opponent_username_escaped}\n\n"
+                        )
+                    found_fixture = True
+                    print(f"DEBUG: Fixture found and added to reply for {user_id}.")
                     break # Stop after finding the user's match
                 else:
-                    print(f"DEBUG: User {user_id} not in knockout match {match_index}'s player IDs ({match[0]}, {match[1]}).")
-            
-            # If after checking all knockout matches, no fixture was found for the user
-            if not found_fixture:
-                reply_text = "❌ No upcoming match found for you or your matches are already completed for this stage."
-                print(f"DEBUG: No fixture found for {user_id} in {current_stage}. 'found_fixture' remained False.")
+                    print(f"DEBUG: Opponent {opponent_id} not found in 'players' data for knockout match.")
+                    # Handle case where opponent info is missing, still display partial info
+                    player_team_escaped = escape_markdown_v2(player_info.get('team', ''))
+                    stage_title_escaped = escape_markdown_v2(current_stage.replace('_', ' ').title())
+                    reply_text += (
+                        f"📅 Your Match \(*{stage_title_escaped}*\):\n"
+                        f"{player_team_escaped} vs Unknown Opponent \(Pending\)\n"
+                        f"🎮 Opponent: @unknown\n\n" # Fallback if username is missing
+                    )
+                    found_fixture = True # We still found *a* fixture, even if opponent is missing.
+                    break
+            else:
+                print(f"DEBUG: User {user_id} not in knockout match {match_index}'s player IDs ({match[0]}, {match[1]}).")
+
+        # If after checking all knockout matches, no fixture was found for the user
+        if not found_fixture:
+            reply_text = "❌ No upcoming match found for you or your matches are already completed for this stage\."
+            print(f"DEBUG: No fixture found for {user_id} in {current_stage}. 'found_fixture' remained False.")
+
+    # Final send of the message
+    if reply_text: # Ensure reply_text is not empty before sending
+        try:
+            await update.message.reply_text(reply_text, parse_mode=ParseMode.MARKDOWN_V2)
+        except Exception as e:
+            print(f"ERROR: Could not send reply_text due to markdown parsing error: {e}")
+            print(f"Problematic reply_text:\n{reply_text}")
+            # Fallback to plain text if MarkdownV2 fails
+            await update.message.reply_text("An error occurred while formatting the message\. Please contact admin\. Here's the raw info:\n" + escape_markdown_v2(reply_text), parse_mode=ParseMode.MARKDOWN_V2)
+    else:
+        # This case should ideally not be reached if the logic above is sound
+        # but as a safeguard, if reply_text is somehow still empty
+        await update.message.reply_text("No fixtures to display at this moment\.", parse_mode=ParseMode.MARKDOWN_V2)
 async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     players = load_state("players")
     groups_data = load_state("groups")
