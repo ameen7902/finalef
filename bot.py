@@ -820,7 +820,7 @@ async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # --- Provide feedback if no matches found (Beautified) ---
     if idx == 1: 
-        reply = f"👍 *All matches for the current {escape_markdown_v2(current_stage.replace('_', ' ').title())} are complete!* ✅"
+        reply = f"👍 *All matches for the current {escape_markdown_v2(current_stage.replace('_', ' ').title())} are complete\!* ✅"
         
         if current_stage == "group_stage":
             reply += f"\nAdmin can now use /{escape_markdown_v2('advance_group_round')} to proceed\\." 
