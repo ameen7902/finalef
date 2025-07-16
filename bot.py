@@ -508,7 +508,7 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"DEBUG: Group '{player_group}' not found in fixtures_data group_stage.")
             return
 
-        reply_text += f"📅 Your Group Matches - {escape_markdown_v2(player_info['team'])} ({escape_markdown_v2(player_info['group'] or 'No Group')}) - Round {current_group_round + 1}\n\n"
+        reply_text += f"📅 Your Group Matches - {escape_markdown_v2(player_info['team'])} ({escape_markdown_v2(player_info['group'] or 'No Group')}) - Match {current_group_round + 1}\n\n"
         group_matches = fixtures_data["group_stage"][player_group]
         print(f"DEBUG: Group '{player_group}' matches loaded: {json.dumps(group_matches, indent=2)}")
 
@@ -548,7 +548,7 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         score_status = "(Pending)"
                         # If match is pending
                         reply_text += (
-                            f"📅 Your Match (Round {match[4] + 1}):\n"
+                            f"MATCHDAY ( {match[4] + 1}):\n"
                             f"{escape_markdown_v2(player_info['team'])} vs {escape_markdown_v2(opponent_info['team'])} {score_status}\n"
                             f"🎮 Opponent: @{escape_markdown_v2(opponent_info['username'])}\n"
                         )
