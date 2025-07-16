@@ -5,7 +5,7 @@ import os
 from collections import defaultdict
 import base64 # For decoding Firebase key
 import asyncio # Keep for async operations
-
+from telegram.ext import CallbackQueryHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     Application,
@@ -782,11 +782,15 @@ application = None
 def setup_bot_handlers_sync(app_instance: Application) -> None:
     # Add handlers
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("register", register)],
-        states={
-            REGISTER_PES: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_pes_name)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel_registration)],
+    entry_points=[
+        CommandHandler("register", register),
+        # ADD THIS LINE:
+        CallbackQueryHandler(handle_team_selection, pattern=r"^team_select:")
+    ],
+    states={
+        REGISTER_PES: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_pes_name)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel_registration)],
     )
     app_instance.add_handler(conv_handler)
 
