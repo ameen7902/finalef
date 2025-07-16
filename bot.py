@@ -1,6 +1,7 @@
 import json
 import time
 import random
+import re
 import os
 from collections import defaultdict
 import base64 # For decoding Firebase key
@@ -46,7 +47,10 @@ TEAM_LIST = [
 
 # Conversation state for PES name entry
 REGISTER_PES = 1
-
+def escape_markdown_v2(text: str) -> str:
+    """Helper function to escape markdown v2 special characters."""
+    escape_chars = r'_*[]()~`>#+-=|{}.!'
+    return re.sub(r'([%s])' % re.escape(escape_chars), r'\\\1', text)
 # === FIREBASE UTILITIES ===
 def init_firebase():
     global firebase_db_ref
@@ -504,7 +508,7 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"DEBUG: Group '{player_group}' not found in fixtures_data group_stage.")
             return
 
-        reply_text += f"📅 Your Group Matches - {player_info['team']} ({player_info['group'] or 'No Group'}) - Round {current_group_round + 1}\n\n" # Display current round
+        reply_text += f"📅 Your Group Matches - {escape_markdown_v2(player_info['team'])} ({escape_markdown_v2(player_info['group'] or 'No Group')}) - Round {current_group_round + 1}\n\n"
         group_matches = fixtures_data["group_stage"][player_group]
         print(f"DEBUG: Group '{player_group}' matches loaded: {json.dumps(group_matches, indent=2)}")
 
@@ -537,16 +541,16 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         # If match is finished, display as scoreboard
                         reply_text += (
                             f"🏆 Match Result (Round {match[4] + 1}):\n"
-                            f"*{player_info['team']} {match[2]} - {match[3]} {opponent_info['team']}*\n"
-                            f"🎮 Opponent: @{opponent_info['username']}\n"
+                            f"*{escape_markdown_v2(player_info['team'])} {match[2]} - {match[3]} {escape_markdown_v2(opponent_info['team'])}*\n"
+                            f"🎮 Opponent: @{escape_markdown_v2(opponent_info['username'])}\n"
                         )
                     else:
                         score_status = "(Pending)"
                         # If match is pending
                         reply_text += (
                             f"📅 Your Match (Round {match[4] + 1}):\n"
-                            f"{player_info['team']} vs {opponent_info['team']} {score_status}\n"
-                            f"🎮 Opponent: @{opponent_info['username']}\n"
+                            f"{escape_markdown_v2(player_info['team'])} vs {escape_markdown_v2(opponent_info['team'])} {score_status}\n"
+                            f"🎮 Opponent: @{escape_markdown_v2(opponent_info['username'])}\n"
                         )
                     found_fixture = True
                     print(f"DEBUG: Fixture found and added to reply for {user_id}. Match: {match}")
