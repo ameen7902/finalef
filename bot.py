@@ -572,68 +572,60 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
     elif current_stage in ["round_of_16", "quarter_finals", "semi_finals", "final"]:
-        # This part remains mostly the same for now, as we agreed to handle knockouts later.
-        # You might still want to add the len(match) < 4 check here if not already.
         knockout_matches = fixtures_data.get(current_stage, [])
         if not knockout_matches:
-            await update.message.reply_text("❌ Knockout matches for this stage are not yet drawn.")
+            reply_text = "❌ Knockout matches for this stage are not yet drawn."
             print(f"DEBUG: No knockout matches for stage {current_stage}.")
-            return
-
-        reply_text += f"📅 Your Knockout Match - {player_info['team']}\n\n"
-        for match_index, match in enumerate(knockout_matches):
-            if not isinstance(match, list) or len(match) < 4: # Assuming knockout matches will be 4 elements initially
-                print(f"WARNING: Malformed knockout match data (too short) in Firebase for stage {current_stage}, Match index {match_index}: {match}")
-                continue
-
-            print(f"DEBUG: Processing knockout match {match_index}: {match}")
-            if user_id == match[0] or user_id == match[1]:
-                opponent_id = match[1] if match[0] == user_id else match[0]
-                opponent_info = players.get(opponent_id)
-                print(f"DEBUG: Opponent info for {opponent_id}: {opponent_info}")
-
-                if opponent_info:
-                    if match[2] is not None and match[3] is not None:
-                        score_status = f"({match[2]}-{match[3]})"
-                        reply_text += (
-                            f"🏆 Match Result (*{current_stage.replace('_', ' ').title()}*):\n"
-                            f"*{player_info['team']} {match[2]} - {match[3]} {opponent_info['team']}*\n"
-                            f"🎮 Opponent: @{opponent_info['username']}\n"
-                        )
-                    else:
-                        score_status = "(Pending)"
-                        reply_text += (
-                            f"📅 Your Match (*{current_stage.replace('_', ' ').title()}*):\n"
-                            f"{player_info['team']} vs {opponent_info['team']} {score_status}\n"
-                            f"🎮 Opponent: @{opponent_info['username']}\n"
-                        )
-                    found_fixture = True
-                    print(f"DEBUG: Fixture found and added to reply for {user_id}.")
-                else:
-                    print(f"DEBUG: Opponent {opponent_id} not found in 'players' data for knockout match.")
-                break
-            else:
-                print(f"DEBUG: User {user_id} not in knockout match {match_index}'s player IDs ({match[0]}, {match[1]}).")
-
-    # The 'found_fixture' check at the end:
-    # If found_fixture is True, it means a match (either group or knockout) was found and added to reply_text.
-    # If it's False here, and it's not a group stage "no active match" case,
-    # it means no match was found at all.
-    if found_fixture: # This check needs to be re-evaluated if we only want one match displayed.
-                      # The conditional check inside 'group_stage' block is more precise now.
-        if reply_text.strip(): # Only send if there's actual text
-            await update.message.reply_text(reply_text, parse_mode='Markdown')
-            print(f"DEBUG: Sent fixture reply for {user_id}. Reply length: {len(reply_text)} characters.")
+            # No return here, let the final `if reply_text:` handle it
         else:
-            # This case might happen if the inner `found_fixture` was set, but then no text was generated
-            # due to some edge case, or if the user's current round match is already complete and
-            # the previous if-block handled it.
-            await update.message.reply_text("❌ No active match found for you at this moment. Please wait for the admin to advance the round.")
-    # else: The more specific message for 'no active match in group stage' is already handled above.
-    # If it falls through here, and not a group stage, then this is the fallback.
-    elif not found_fixture and current_stage not in ["group_stage"]: # For knockout stages if no match found
-         await update.message.reply_text("❌ No upcoming match found for you or your matches are already completed for this stage.")
-         print(f"DEBUG: No fixture found for {user_id}. 'found_fixture' remained False.")
+            # Header for knockout stage matches
+            # Apply escape_markdown_v2 for the header too
+            reply_text += f"📅 Your Knockout Match - {escape_markdown_v2(player_info['team'])} ({escape_markdown_v2(current_stage.replace('_', ' ').title())})\n\n"
+            
+            for match_index, match in enumerate(knockout_matches):
+                if not isinstance(match, list) or len(match) < 4: # Assuming knockout matches are 4 elements
+                    print(f"WARNING: Malformed knockout match data (too short) in Firebase for stage {current_stage}, Match index {match_index}: {match}")
+                    continue
+
+                print(f"DEBUG: Processing knockout match {match_index}: {match}")
+                if user_id == match[0] or user_id == match[1]:
+                    opponent_id = match[1] if match[0] == user_id else match[0]
+                    opponent_info = players.get(opponent_id)
+                    print(f"DEBUG: Opponent info for {opponent_id}: {opponent_info}")
+
+                    if opponent_info:
+                        # --- THIS IS THE CRITICAL CHANGE: APPLY escape_markdown_v2 HERE ---
+                        player_team_escaped = escape_markdown_v2(player_info['team'])
+                        opponent_team_escaped = escape_markdown_v2(opponent_info['team'])
+                        opponent_username_escaped = escape_markdown_v2(opponent_info['username'])
+                        stage_title_escaped = escape_markdown_v2(current_stage.replace('_', ' ').title())
+
+                        if match[2] is not None and match[3] is not None:
+                            # If match is finished, display as scoreboard
+                            reply_text += (
+                                f"🏆 Match Result (*{stage_title_escaped}*):\n"
+                                f"*{player_team_escaped} {match[2]} - {match[3]} {opponent_team_escaped}*\n"
+                                f"🎮 Opponent: @{opponent_username_escaped}\n\n" # Added newline for spacing
+                            )
+                        else:
+                            # If match is pending
+                            reply_text += (
+                                f"📅 Your Match (*{stage_title_escaped}*):\n"
+                                f"{player_team_escaped} vs {opponent_team_escaped} (Pending)\n"
+                                f"🎮 Opponent: @{opponent_username_escaped}\n\n" # Added newline for spacing
+                            )
+                        found_fixture = True
+                        print(f"DEBUG: Fixture found and added to reply for {user_id}.")
+                    else:
+                        print(f"DEBUG: Opponent {opponent_id} not found in 'players' data for knockout match.")
+                    break # Stop after finding the user's match
+                else:
+                    print(f"DEBUG: User {user_id} not in knockout match {match_index}'s player IDs ({match[0]}, {match[1]}).")
+            
+            # If after checking all knockout matches, no fixture was found for the user
+            if not found_fixture:
+                reply_text = "❌ No upcoming match found for you or your matches are already completed for this stage."
+                print(f"DEBUG: No fixture found for {user_id} in {current_stage}. 'found_fixture' remained False.")
 async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     players = load_state("players")
     groups_data = load_state("groups")
