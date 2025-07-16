@@ -901,7 +901,88 @@ async def handle_group_score(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # The logic to check if all matches are completed and advance to knockout
     # is now handled by the /advance_group_round command, NOT here.
 
+async def advance_group_round(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("❌ Only the admin can advance tournament rounds.")
+        return
 
+    tournament_state = load_state("tournament_state")
+    fixtures_data = load_state("fixtures")
+    players = load_state("players") # Needed to show team names
+
+    current_stage = tournament_state.get("stage")
+    current_group_round = tournament_state.get("group_match_round", 0)
+
+    if current_stage != "group_stage":
+        await update.message.reply_text(f"❌ Tournament is not in the group stage. Current stage: {current_stage}. Cannot advance group rounds.")
+        return
+
+    group_stage_fixtures = fixtures_data.get("group_stage", {})
+
+    # 1. Check if ALL matches for the current round are completed
+    pending_matches_in_current_round = []
+    # Loop through all groups
+    for group_name, matches_in_group in group_stage_fixtures.items():
+        # Loop through matches within each group
+        for match_data in matches_in_group:
+            # Ensure it's a valid match list with 5 elements (player1_id, player2_id, score1, score2, round_number)
+            # And ensure it belongs to the current_group_round being checked
+            if isinstance(match_data, list) and len(match_data) >= 5 and match_data[4] == current_group_round:
+                # Check if scores are missing (None)
+                if match_data[2] is None or match_data[3] is None:
+                    player1_id, player2_id, _, _, _ = match_data
+                    
+                    # Get player teams for display, using escape_markdown_v2
+                    player1_team = players.get(player1_id, {}).get('team', f"Player {player1_id}")
+                    player2_team = players.get(player2_id, {}).get('team', f"Player {player2_id}")
+                    
+                    pending_matches_in_current_round.append(
+                        f"- {escape_markdown_v2(player1_team)} vs {escape_markdown_v2(player2_team)} (Group {escape_markdown_v2(group_name)})"
+                    )
+
+    if pending_matches_in_current_round:
+        # If there are pending matches, inform the admin
+        reply_text = f"❌ Cannot advance to the next round. The following matches in Round {current_group_round + 1} are still pending:\n"
+        reply_text += "\n".join(pending_matches_in_current_round)
+        await update.message.reply_text(reply_text, parse_mode='Markdown')
+        return
+
+    # 2. If all current round matches are complete, check if there are more rounds or if group stage is finished
+    max_group_rounds = 3 # This should match the total number of rounds you generate (0-indexed: 0, 1, 2 for 3 rounds)
+
+    if current_group_round < max_group_rounds - 1: # -1 because rounds are 0-indexed (e.g., if max=3, rounds are 0,1,2. We advance if current is 0 or 1)
+        tournament_state["group_match_round"] += 1 # Increment to the next round
+        save_state("tournament_state", tournament_state)
+        new_round_number = tournament_state["group_match_round"] + 1 # For user-friendly display (1-indexed)
+
+        await update.message.reply_text(
+            f"✅ All matches for Round {current_group_round + 1} are completed! Advancing to Round {new_round_number}.",
+            parse_mode='Markdown' # Ensure Markdown is applied
+        )
+        await context.bot.send_message(
+            GROUP_ID,
+            f"📣 Group stage has advanced! Round {new_round_number} matches are now active. Use /fixtures to see your new match.",
+            parse_mode='Markdown'
+        )
+    else:
+        # All group rounds are finished (current_group_round is now max_group_rounds - 1, meaning the last round's matches are done)
+        tournament_state["stage"] = "group_stage_completed" # Update stage to indicate group stage is over
+        save_state("tournament_state", tournament_state)
+
+        await update.message.reply_text(
+            "🎉 All group stage matches are completed! The group stage has ended. Calculating standings and preparing for Knockouts...",
+            parse_mode='Markdown'
+        )
+        await context.bot.send_message(
+            GROUP_ID,
+            "🎉 The Group Stage has concluded! Calculating final standings and preparing for Knockouts (to be drawn by admin). Use /standings to see final group rankings.",
+            parse_mode='Markdown'
+        )
+        
+        # This is where your 'advance_to_knockout' function gets called,
+        # after ALL group rounds are complete and confirmed by the admin via /advance_group_round.
+        await advance_to_knockout(context)
 async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     players = load_state("players")
     groups_data = load_state("groups")
@@ -1093,7 +1174,7 @@ def setup_bot_handlers_sync(app_instance: Application) -> None:
     app_instance.add_handler(CommandHandler("start_tournament", start_tournament))
     app_instance.add_handler(CommandHandler("fixtures", fixtures))
     app_instance.add_handler(CommandHandler("standings", group_standings))
-
+    application.add_handler(CommandHandler("advance_group_round", advance_group_round))
     # Dynamically add handlers for /matchX commands for admin scores
     for i in range(1, 101): # Assuming up to 100 matches
         app_instance.add_handler(CommandHandler(f"match{i}", handle_score))
