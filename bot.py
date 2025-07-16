@@ -847,6 +847,10 @@ async def main():
 
 # --- PTB Application Setup and Run Logic ---
 
+# ... (all your existing imports, functions, and handlers go here) ...
+
+# --- PTB Application Setup and Run Logic (Polling Mode Only) ---
+
 if __name__ == '__main__':
     # Initialize Firebase once
     print("--- Initializing Firebase ---")
@@ -859,7 +863,7 @@ if __name__ == '__main__':
     print("--- Setting up bot application ---")
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Add handlers (this section remains the same)
+    # Add handlers (this section remains the same, assuming it's correct)
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("register", register)],
         states={
@@ -885,21 +889,13 @@ if __name__ == '__main__':
 
     application.add_handler(CallbackQueryHandler(handle_team_selection, pattern=r"^team_select:"))
 
-    # --- THE CRITICAL CHANGES ARE HERE ---
-    async def start_bot_async():
-        # Await these setup tasks BEFORE starting the main webhook/polling loop
-        await set_bot_commands(application)
 
-        WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
-        if WEBHOOK_URL:
-            print("--- Starting bot in webhook mode on port 8080 ---")
-            await application.bot.set_webhook(url=WEBHOOK_URL) # AWAIT this!
-            # Now, run the webhook server
-            await application.run_webhook(listen="0.0.0.0", port=8080, url_path="webhook", webhook_url=WEBHOOK_URL)
-        else:
-            print("--- Starting bot in polling mode ---")
-            await application.run_polling(drop_pending_updates=True)
+    # --- Simplified Polling-Only Run ---
+    async def start_polling_bot():
+        await set_bot_commands(application) # Set bot commands
+        print("--- Starting bot in polling mode ---")
+        # Run the bot in polling mode. drop_pending_updates=True clears old updates on startup.
+        await application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
-    # This is how you run the main async function from a synchronous entry point.
-    # It correctly manages the event loop.
-    asyncio.run(start_bot_async())
+    # Use asyncio.run to start the polling bot. This should handle the event loop correctly.
+    asyncio.run(start_polling_bot())
