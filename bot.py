@@ -824,16 +824,15 @@ async def run_polling_mode_bot():
 
 # Main entry point for the script
 if __name__ == '__main__':
-    print("--- Script execution started ---") # FIRST PRINT STATEMENT
+    print("--- Script execution started ---")
 
-    # Use a global try-except to catch any unexpected errors during startup
     try:
         # Initialize Firebase once (synchronous)
         print("--- Initializing Firebase ---")
         init_firebase()
         if firebase_db_ref is None:
             print("FATAL: Firebase could not be initialized or required ENV vars are missing. Exiting.")
-            import sys # Ensure sys is imported for exit
+            import sys
             sys.exit(1)
         print("--- Firebase initialization status: OK ---")
 
@@ -845,9 +844,17 @@ if __name__ == '__main__':
         print("--- BOT_TOKEN is set ---")
 
         print("--- Building Telegram Application instance ---")
-        # Build the Application instance (synchronous)
-      
-        application = Application.builder().token(BOT_TOKEN).build()
+
+        # Define an async function to be run after Application init, but before polling starts
+        async def post_init_setup(app_instance: Application) -> None:
+            print("--- Post-init setup: Setting bot commands ---")
+            # Call your existing async function here, passing the application instance
+            await set_bot_commands(app_instance)
+            print("--- Post-init setup: Bot commands set ---")
+
+
+        # Build the Application instance, using post_init to set commands
+        application = Application.builder().token(BOT_TOKEN).post_init(post_init_setup).build()
         print("--- Telegram Application instance built ---")
 
         # Set up all synchronous handlers and other configuration
@@ -855,18 +862,21 @@ if __name__ == '__main__':
         setup_bot_handlers_sync(application)
         print("--- Bot handlers setup complete ---")
 
-        # Now, run the main asynchronous part using asyncio.run
-        print("--- Attempting to start asyncio event loop for polling mode ---")
-        asyncio.run(run_polling_mode_bot())
+        # Now, run the main polling part. PTB's run_polling manages its own event loop.
+        print("--- Starting bot in polling mode ---")
+        application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+        print("--- Bot polling stopped (this should not print unless bot gracefully exits) ---")
+
 
     except Exception as e:
         print(f"\n!!! CRITICAL UNHANDLED EXCEPTION DURING BOT STARTUP !!!")
         print(f"Error type: {type(e).__name__}")
         print(f"Error message: {e}")
         import traceback
-        traceback.print_exc() # Print full stack trace
+        traceback.print_exc()
         print("--- Script terminated due to unhandled exception ---")
         import sys
-        sys.exit(1) # Ensure process exits with an error code
+        sys.exit(1)
 
-    print("--- End of script execution path ---") # Should not be reached during normal polling operation
+    print("--- End of script execution path ---")
+
