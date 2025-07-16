@@ -12,7 +12,8 @@ from telegram.ext import (
     CommandHandler, CallbackQueryHandler, MessageHandler, filters,
     ContextTypes, ConversationHandler
 )
-# REMOVED: from flask import Flask, request, jsonify # No longer needed
+from collections import defaultdict # Ensure this is imported
+import itertools # Add this import for combination generation
 import html # <--- ADD THIS IMPORT at the top of your bot.py file
 from telegram.constants import ParseMode
 # Firebase Imports
@@ -349,8 +350,12 @@ async def make_groups(context: ContextTypes.DEFAULT_TYPE):
 # --- MODIFIED start_tournament HANDLER ---
 # This function orchestrates everything, gets data from helper functions,
 # and performs the FINAL save of the complete fixtures data.
+# --- MODIFIED start_tournament HANDLER ---
+# This function orchestrates everything, gets data from helper functions,
+# and performs the FINAL save of the complete fixtures data.
 async def start_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    user_id = str(update.effective_user.id)
+    if user_id != ADMIN_ID:
         await update.message.reply_text("❌ Only the admin can start the tournament.")
         return
 
@@ -366,11 +371,37 @@ async def start_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("🎉 The tournament is starting! Generating groups and fixtures...")
 
-    await make_groups(context)
+    # 1. Make groups and get the group assignments back
+    # (This make_groups function is assumed to be the one you already have that saves players and groups state)
+    groups = await make_groups(context)
+
+    # 2. Generate group fixtures using the returned groups data
+    # (This make_group_fixtures now includes the round_number)
+    group_stage_fixtures = make_group_fixtures(groups)
+
+    # 3. Assemble the COMPLETE fixtures_data object
+    # Initialize all stages to ensure a clean, array-friendly structure
+    fixtures_data = {
+        "group_stage": group_stage_fixtures,
+        "round_of_16": [],   # Initialize as empty list for future knockout matches
+        "quarter_finals": [],
+        "semi_finals": [],
+        "final": []
+    }
+
+    # === THIS IS A DEBUG PRINT - YOU CAN REMOVE IT LATER ===
+    print(f"DEBUG: Fixtures data *before* saving to Firebase: {json.dumps(fixtures_data, indent=2)}")
+
+    # === PERFORM THE SINGLE, FINAL SAVE OF THE COMPLETE FIXTURES DATA ===
+    save_state("fixtures", fixtures_data)
+
+    # 4. Update tournament state - Initialize current group match round
     tournament_state["stage"] = "group_stage"
+    tournament_state["group_match_round"] = 0 # NEW: Initialize current round to 0 (Round 1 conceptually)
     save_state("tournament_state", tournament_state)
 
-    await context.bot.send_message(GROUP_ID, "🏆 Group Stage has begun! Check /fixtures for your matches and /standings for current rankings.")
+    await update.message.reply_text("🏆 Tournament has begun! Group stage fixtures generated for Round 1.")
+    await context.bot.send_message(GROUP_ID, "🔢 Group fixtures generated for Round 1! Use /fixtures to see your match schedule and /standings for current rankings.")
 
 
 async def make_groups(context: ContextTypes.DEFAULT_TYPE):
@@ -391,25 +422,52 @@ async def make_groups(context: ContextTypes.DEFAULT_TYPE):
 
     await make_group_fixtures(context, groups)
 
-async def make_group_fixtures(context: ContextTypes.DEFAULT_TYPE, groups: dict):
-    fixtures_data = load_state("fixtures")
+
+def make_group_fixtures(groups: dict):
+    fixtures_data = load_state("fixtures") # Temporarily load to potentially merge if needed, but not saving back here
     group_stage_fixtures = {}
 
     for group_name, player_ids_in_group in groups.items():
-        group_fixtures = []
-        for i in range(len(player_ids_in_group)):
-            for j in range(i + 1, len(player_ids_in_group)):
-                player1_id = player_ids_in_group[i]
-                player2_id = player_ids_in_group[j]
-                group_fixtures.append([player1_id, player2_id, None, None])
+        # Using the new scheduler for each group
+        group_fixtures = generate_round_robin_schedule(player_ids_in_group)
         group_stage_fixtures[group_name] = group_fixtures
 
-    fixtures_data["group_stage"] = group_stage_fixtures
-    save_state("fixtures", fixtures_data)
+    return group_stage_fixtures
+def generate_round_robin_schedule(players_in_group):
+    """
+    Generates a round-robin schedule for 4 players over 3 rounds.
+    Each player plays one match per round.
+    Assumes len(players_in_group) is 4.
+    """
+    if len(players_in_group) != 4:
+        # This function is specifically for groups of 4. Adjust if group sizes vary.
+        # For other sizes, a different scheduling algorithm would be needed.
+        print(f"WARNING: Group size is not 4. Cannot generate round-robin schedule for: {players_in_group}")
+        return []
 
-    await context.bot.send_message(GROUP_ID, "🔢 Group fixtures generated! Use /fixtures to see your match schedule.")
+    schedule = []
+    # Simplified round-robin pairings for 4 players (0, 1, 2, 3)
+    # This ensures each player has one match per round.
+    # Player indices refer to their position in the players_in_group list
+    pairings_per_round = [
+        [(0, 3), (1, 2)], # Round 0: P0 vs P3, P1 vs P2
+        [(0, 2), (3, 1)], # Round 1: P0 vs P2, P3 vs P1
+        [(0, 1), (2, 3)]  # Round 2: P0 vs P1, P2 vs P3
+    ]
 
+    for round_num, round_pairings in enumerate(pairings_per_round):
+        for p_idx1, p_idx2 in round_pairings:
+            player1_id = players_in_group[p_idx1]
+            player2_id = players_in_group[p_idx2]
+            # Match format: [player1_id, player2_id, score1, score2, round_number]
+            schedule.append([player1_id, player2_id, None, None, round_num])
+    return schedule
 import json # Ensure this is at the top of your bot.py file for any debugging prints
+# No 'import re' needed if you are not using the escape_markdown_v2 function.
+# If you still want the BadRequest fix, you should manually re-add the
+# escape_markdown_v2 function and calls, and the import re.
+# For now, we're focusing purely on the round-based display.
+
 
 async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -419,10 +477,11 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fixtures_data = load_state("fixtures")
     tournament_state = load_state("tournament_state")
     current_stage = tournament_state.get("stage", "registration")
+    current_group_round = tournament_state.get("group_match_round", 0) # NEW: Get current round
 
     if user_id not in players:
         await update.message.reply_text("❌ You are not registered for the tournament. Use /register.")
-        print(f"DEBUG: User {user_id} not in players. Players count: {len(players)}")
+        print(f"DEBUG: User {user_id} not in players.")
         return
 
     player_info = players[user_id]
@@ -436,23 +495,26 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not player_group or player_group not in fixtures_data.get("group_stage", {}):
             await update.message.reply_text("❌ Your group fixtures are not yet available.")
-            print(f"DEBUG: Group '{player_group}' not found in fixtures_data group_stage. Available groups: {fixtures_data.get('group_stage', {}).keys()}")
-            print(f"DEBUG: Full group_stage data: {json.dumps(fixtures_data.get('group_stage', {}), indent=2)}")
+            print(f"DEBUG: Group '{player_group}' not found in fixtures_data group_stage.")
             return
 
-        reply_text += f"📅 Your Group Matches - {player_info['team']} ({player_info['group'] or 'No Group'})\n\n"
+        reply_text += f"📅 Your Group Matches - {player_info['team']} ({player_info['group'] or 'No Group'}) - Round {current_group_round + 1}\n\n" # Display current round
         group_matches = fixtures_data["group_stage"][player_group]
         print(f"DEBUG: Group '{player_group}' matches loaded: {json.dumps(group_matches, indent=2)}")
 
         if not group_matches:
-            print(f"DEBUG: Group '{player_group}' has no matches listed, despite existing in fixtures_data.")
+            print(f"DEBUG: Group '{player_group}' has no matches listed.")
 
         for match_index, match in enumerate(group_matches):
-            # === MODIFIED DEFENSIVE CHECK FOR match[2] and match[3] ===
-            # Ensure 'match' is a list and has at least 2 elements for player IDs
-            if not isinstance(match, list) or len(match) < 2:
+            # Ensure match has enough elements (now 5 for round_number)
+            if not isinstance(match, list) or len(match) < 5: # Changed from < 2 or < 4 to < 5
                 print(f"WARNING: Malformed match data (too short) in Firebase for Group {player_group}, Match index {match_index}: {match}")
-                continue # Skip to the next match
+                continue
+
+            # NEW: Check if this match belongs to the current round
+            if match[4] != current_group_round: # match[4] is the round_number
+                print(f"DEBUG: Skipping match {match_index} as it belongs to round {match[4]}, not current round {current_group_round}.")
+                continue # Skip to the next match if not for the current round
 
             print(f"DEBUG: Processing match {match_index}: {match}")
             if user_id in match[0:2]:
@@ -463,15 +525,23 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 if opponent_info:
                     # Check if match has score placeholders before accessing them
-                    if len(match) >= 4 and match[2] is not None and match[3] is not None:
+                    # Note: Scores are still match[2] and match[3]
+                    if match[2] is not None and match[3] is not None:
                         score_status = f"({match[2]}-{match[3]})"
+                        # If match is finished, display as scoreboard
+                        reply_text += (
+                            f"🏆 Match Result (Round {match[4] + 1}):\n"
+                            f"*{player_info['team']} {match[2]} - {match[3]} {opponent_info['team']}*\n"
+                            f"🎮 Opponent: @{opponent_info['username']}\n"
+                        )
                     else:
                         score_status = "(Pending)"
-
-                    reply_text += (
-                        f"{player_info['team']} vs {opponent_info['team']} {score_status}\n"
-                        f"🎮 Opponent: @{opponent_info['username']}\n"
-                    )
+                        # If match is pending
+                        reply_text += (
+                            f"📅 Your Match (Round {match[4] + 1}):\n"
+                            f"{player_info['team']} vs {opponent_info['team']} {score_status}\n"
+                            f"🎮 Opponent: @{opponent_info['username']}\n"
+                        )
                     found_fixture = True
                     print(f"DEBUG: Fixture found and added to reply for {user_id}. Match: {match}")
                 else:
@@ -479,8 +549,21 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 print(f"DEBUG: User {user_id} not in match {match_index}'s player IDs ({match[0]}, {match[1]}).")
 
+        # Check if current user has any active matches for the current round
+        if not found_fixture:
+            # If found_fixture is still False after checking all matches in the current round,
+            # it means the user has no match *for this specific round* or all their matches are complete.
+            # Since we are only showing ONE match now, this needs refinement if a user
+            # has multiple matches for one round (which they shouldn't with the round-robin logic).
+            # For now, if no match found for this user in this round, it means they might have already
+            # reported their score for this specific round, or the admin needs to advance the round.
+            await update.message.reply_text("✅ Your match for this round is completed or you have no active match for the current round. Please wait for the admin to advance to the next round.")
+            print(f"DEBUG: No active match found for {user_id} in Round {current_group_round}.")
+
 
     elif current_stage in ["round_of_16", "quarter_finals", "semi_finals", "final"]:
+        # This part remains mostly the same for now, as we agreed to handle knockouts later.
+        # You might still want to add the len(match) < 4 check here if not already.
         knockout_matches = fixtures_data.get(current_stage, [])
         if not knockout_matches:
             await update.message.reply_text("❌ Knockout matches for this stage are not yet drawn.")
@@ -489,9 +572,8 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         reply_text += f"📅 Your Knockout Match - {player_info['team']}\n\n"
         for match_index, match in enumerate(knockout_matches):
-            # === MODIFIED DEFENSIVE CHECK FOR match[2] and match[3] ===
-            if not isinstance(match, list) or len(match) < 2:
-                print(f"WARNING: Malformed match data (too short) in Firebase for stage {current_stage}, Match index {match_index}: {match}")
+            if not isinstance(match, list) or len(match) < 4: # Assuming knockout matches will be 4 elements initially
+                print(f"WARNING: Malformed knockout match data (too short) in Firebase for stage {current_stage}, Match index {match_index}: {match}")
                 continue
 
             print(f"DEBUG: Processing knockout match {match_index}: {match}")
@@ -501,17 +583,20 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 print(f"DEBUG: Opponent info for {opponent_id}: {opponent_info}")
 
                 if opponent_info:
-                    # Check if match has score placeholders before accessing them
-                    if len(match) >= 4 and match[2] is not None and match[3] is not None:
+                    if match[2] is not None and match[3] is not None:
                         score_status = f"({match[2]}-{match[3]})"
+                        reply_text += (
+                            f"🏆 Match Result (*{current_stage.replace('_', ' ').title()}*):\n"
+                            f"*{player_info['team']} {match[2]} - {match[3]} {opponent_info['team']}*\n"
+                            f"🎮 Opponent: @{opponent_info['username']}\n"
+                        )
                     else:
                         score_status = "(Pending)"
-
-                    reply_text += (
-                        f"*{current_stage.replace('_', ' ').title()}:*\n"
-                        f"{player_info['team']} vs {opponent_info['team']} {score_status}\n"
-                        f"🎮 Opponent: @{opponent_info['username']}\n"
-                    )
+                        reply_text += (
+                            f"📅 Your Match (*{current_stage.replace('_', ' ').title()}*):\n"
+                            f"{player_info['team']} vs {opponent_info['team']} {score_status}\n"
+                            f"🎮 Opponent: @{opponent_info['username']}\n"
+                        )
                     found_fixture = True
                     print(f"DEBUG: Fixture found and added to reply for {user_id}.")
                 else:
@@ -520,12 +605,25 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 print(f"DEBUG: User {user_id} not in knockout match {match_index}'s player IDs ({match[0]}, {match[1]}).")
 
-    if found_fixture:
-        await update.message.reply_text(reply_text, parse_mode='Markdown')
-        print(f"DEBUG: Sent fixture reply for {user_id}. Reply length: {len(reply_text)} characters.")
-    else:
-        await update.message.reply_text("❌ No upcoming match found for you or your matches are already completed for this stage.")
-        print(f"DEBUG: No fixture found for {user_id}. 'found_fixture' remained False.")
+    # The 'found_fixture' check at the end:
+    # If found_fixture is True, it means a match (either group or knockout) was found and added to reply_text.
+    # If it's False here, and it's not a group stage "no active match" case,
+    # it means no match was found at all.
+    if found_fixture: # This check needs to be re-evaluated if we only want one match displayed.
+                      # The conditional check inside 'group_stage' block is more precise now.
+        if reply_text.strip(): # Only send if there's actual text
+            await update.message.reply_text(reply_text, parse_mode='Markdown')
+            print(f"DEBUG: Sent fixture reply for {user_id}. Reply length: {len(reply_text)} characters.")
+        else:
+            # This case might happen if the inner `found_fixture` was set, but then no text was generated
+            # due to some edge case, or if the user's current round match is already complete and
+            # the previous if-block handled it.
+            await update.message.reply_text("❌ No active match found for you at this moment. Please wait for the admin to advance the round.")
+    # else: The more specific message for 'no active match in group stage' is already handled above.
+    # If it falls through here, and not a group stage, then this is the fallback.
+    elif not found_fixture and current_stage not in ["group_stage"]: # For knockout stages if no match found
+         await update.message.reply_text("❌ No upcoming match found for you or your matches are already completed for this stage.")
+         print(f"DEBUG: No fixture found for {user_id}. 'found_fixture' remained False.")
 async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     players = load_state("players")
     groups_data = load_state("groups")
