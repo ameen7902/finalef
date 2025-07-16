@@ -405,6 +405,9 @@ async def start_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(GROUP_ID, "🔢 Group fixtures generated for Round 1! Use /fixtures to see your match schedule and /standings for current rankings.")
 
 
+# --- MODIFIED make_groups FUNCTION ---
+# This function now only assigns players to groups and saves 'players' and 'groups' state.
+# It RETURNS the 'groups' data, and DOES NOT call make_group_fixtures itself.
 async def make_groups(context: ContextTypes.DEFAULT_TYPE):
     players = load_state("players")
     player_ids = list(players.keys())
@@ -419,9 +422,11 @@ async def make_groups(context: ContextTypes.DEFAULT_TYPE):
         players[player_id]['group'] = group_name
 
     save_state("players", players)
+    # Save groups as a regular dict, not defaultdict
     save_state("groups", {name: ids for name, ids in groups.items()})
 
-    await make_group_fixtures(context, groups)
+    # This function now RETURNS the groups. It does NOT call make_group_fixtures.
+    return {name: ids for name, ids in groups.items()} # Return as a regular dict
 
 
 def make_group_fixtures(groups: dict):
