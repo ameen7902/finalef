@@ -843,6 +843,10 @@ async def main():
 
 # --- PTB Application Setup and Run Logic ---
 
+# ... (all your existing imports, functions, and handlers go here) ...
+
+# --- PTB Application Setup and Run Logic ---
+
 if __name__ == '__main__':
     # Initialize Firebase once
     print("--- Initializing Firebase ---")
@@ -855,7 +859,7 @@ if __name__ == '__main__':
     print("--- Setting up bot application ---")
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Add handlers (keep this section as it is)
+    # Add handlers (this section remains the same)
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("register", register)],
         states={
@@ -873,7 +877,6 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler("fixtures", fixtures))
     application.add_handler(CommandHandler("standings", group_standings))
 
-    # Dynamically add handlers for /matchX commands for admin scores
     for i in range(1, 101): # Assuming up to 100 matches
         application.add_handler(CommandHandler(f"match{i}", handle_score))
 
@@ -882,34 +885,21 @@ if __name__ == '__main__':
 
     application.add_handler(CallbackQueryHandler(handle_team_selection, pattern=r"^team_select:"))
 
-    # --- THE CRITICAL CHANGE IS HERE ---
-    # We will get the current running loop, or create a new one if none exists.
-    # Then, we directly run the application's webhook/polling.
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError: # No running loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    # --- THE CRITICAL CHANGES ARE HERE ---
+    async def start_bot_async():
+        # Await these setup tasks BEFORE starting the main webhook/polling loop
+        await set_bot_commands(application)
 
-    WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+        WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+        if WEBHOOK_URL:
+            print("--- Starting bot in webhook mode on port 8080 ---")
+            await application.bot.set_webhook(url=WEBHOOK_URL) # AWAIT this!
+            # Now, run the webhook server
+            await application.run_webhook(listen="0.0.0.0", port=8080, url_path="webhook", webhook_url=WEBHOOK_URL)
+        else:
+            print("--- Starting bot in polling mode ---")
+            await application.run_polling(drop_pending_updates=True)
 
-    if WEBHOOK_URL:
-        print("--- Starting bot in webhook mode on port 8080 ---")
-        # Use loop.run_until_complete to run the async setup and then the webhook
-        loop.run_until_complete(
-            asyncio.gather(
-                set_bot_commands(application), # set commands first
-                application.bot.set_webhook(url=WEBHOOK_URL), # set webhook on Telegram side
-                application.run_webhook(listen="0.0.0.0", port=8080, url_path="webhook", webhook_url=WEBHOOK_URL) # start webhook server
-            )
-        )
-    else:
-        print("--- Starting bot in polling mode ---")
-        loop.run_until_complete(
-            asyncio.gather(
-                set_bot_commands(application),
-                application.run_polling(drop_pending_updates=True)
-            )
-        )
-    # The loop should now be managed by run_webhook/run_polling
-    # No explicit loop.run_forever() is needed here as application.run_webhook handles it.
+    # This is how you run the main async function from a synchronous entry point.
+    # It correctly manages the event loop.
+    asyncio.run(start_bot_async())
