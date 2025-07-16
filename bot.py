@@ -350,9 +350,7 @@ async def make_groups(context: ContextTypes.DEFAULT_TYPE):
 # This function orchestrates everything, gets data from helper functions,
 # and performs the FINAL save of the complete fixtures data.
 async def start_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ADMIN_ID = '7366894756' # Or just a number
-    user_id = str(update.effective_user.id)
-    if user_id != ADMIN_ID:
+    if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Only the admin can start the tournament.")
         return
 
@@ -368,41 +366,53 @@ async def start_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("🎉 The tournament is starting! Generating groups and fixtures...")
 
-    # 1. Make groups and get the group assignments back
-    groups = await make_groups(context) # make_groups now returns the groups
-
-    # 2. Generate group fixtures using the returned groups data
-    group_stage_fixtures = make_group_fixtures(groups) # No 'await' needed here, as make_group_fixtures is no longer async
-
-    # 3. Assemble the COMPLETE fixtures_data object
-    # Initialize all stages to ensure a clean, array-friendly structure in Firebase
-    fixtures_data = {
-        "group_stage": group_stage_fixtures,
-        "round_of_16": [],   # Initialize as empty list for future knockout matches
-        "quarter_finals": [],
-        "semi_finals": [],
-        "final": []
-    }
-
-    # === THIS IS THE CRUCIAL DEBUG PRINT - ENSURE IT'S HERE ===
-    print(f"DEBUG: Fixtures data *before* saving to Firebase: {json.dumps(fixtures_data, indent=2)}")
-
-    # === PERFORM THE SINGLE, FINAL SAVE OF THE COMPLETE FIXTURES DATA ===
-    save_state("fixtures", fixtures_data)
-
-    # 4. Update tournament state
+    await make_groups(context)
     tournament_state["stage"] = "group_stage"
     save_state("tournament_state", tournament_state)
 
-    await update.message.reply_text("🏆 Tournament has started! Group stage fixtures are ready.")
-    # Send the group message here, as make_group_fixtures no longer does it
-    await context.bot.send_message(GROUP_ID, "🔢 Group fixtures generated! Use /fixtures to see your match schedule and /standings for current rankings.")
-import json # Ensure this is at the top of your bot.py file for any debugging prints
+    await context.bot.send_message(GROUP_ID, "🏆 Group Stage has begun! Check /fixtures for your matches and /standings for current rankings.")
+
+
+async def make_groups(context: ContextTypes.DEFAULT_TYPE):
+    players = load_state("players")
+    player_ids = list(players.keys())
+    random.shuffle(player_ids)
+
+    groups = defaultdict(list)
+    group_names = [f"Group {chr(65 + i)}" for i in range(8)]
+
+    for i, player_id in enumerate(player_ids):
+        group_name = group_names[i % 8]
+        groups[group_name].append(player_id)
+        players[player_id]['group'] = group_name
+
+    save_state("players", players)
+    save_state("groups", {name: ids for name, ids in groups.items()})
+
+    await make_group_fixtures(context, groups)
+
+async def make_group_fixtures(context: ContextTypes.DEFAULT_TYPE, groups: dict):
+    fixtures_data = load_state("fixtures")
+    group_stage_fixtures = {}
+
+    for group_name, player_ids_in_group in groups.items():
+        group_fixtures = []
+        for i in range(len(player_ids_in_group)):
+            for j in range(i + 1, len(player_ids_in_group)):
+                player1_id = player_ids_in_group[i]
+                player2_id = player_ids_in_group[j]
+                group_fixtures.append([player1_id, player2_id, None, None])
+        group_stage_fixtures[group_name] = group_fixtures
+
+    fixtures_data["group_stage"] = group_stage_fixtures
+    save_state("fixtures", fixtures_data)
+
+    await context.bot.send_message(GROUP_ID, "🔢 Group fixtures generated! Use /fixtures to see your match schedule.")
 
 async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     players = load_state("players")
-    fixtures_data = load_state("fixtures") # Loads the current state from Firebase
+    fixtures_data = load_state("fixtures")
     tournament_state = load_state("tournament_state")
     current_stage = tournament_state.get("stage", "registration")
 
@@ -416,34 +426,19 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if current_stage == "group_stage":
         player_group = player_info.get("group")
-        # Check if player has a group and if that group exists in fixtures data
         if not player_group or player_group not in fixtures_data.get("group_stage", {}):
             await update.message.reply_text("❌ Your group fixtures are not yet available.")
             return
 
         reply_text += f"📅 Your Group Matches - {player_info['team']} ({player_info['group'] or 'No Group'})\n\n"
         group_matches = fixtures_data["group_stage"][player_group]
-
-        # Iterate through matches in the player's group
-        for match_index, match in enumerate(group_matches):
-            # === DEFENSIVE CHECK: Ensure 'match' is a list and has enough elements ===
-            if not isinstance(match, list) or len(match) < 4:
-                print(f"WARNING: Malformed match data in Firebase for Group {player_group}, Match index {match_index}: {match}")
-                # You can choose to skip this malformed match, or provide a default placeholder.
-                # Skipping for now to prevent errors.
-                continue # Skip to the next match
-
-            # Check if the current user is part of this match
+        for match in group_matches:
             if user_id in match[0:2]:
                 opponent_id = match[1] if match[0] == user_id else match[0]
                 opponent_info = players.get(opponent_id)
                 if opponent_info:
-                    # Format score status: (score1-score2) or (Pending)
                     score_status = f"({match[2]}-{match[3]})" if match[2] is not None and match[3] is not None else "(Pending)"
-                    reply_text += (
-                        f"{player_info['team']} vs {opponent_info['team']} {score_status}\n"
-                        f"🎮 Opponent: @{opponent_info['username']}\n"
-                    )
+                    reply_text += f"{player_info['team']} vs {opponent_info['team']} {score_status}\n🎮 Opponent: @{opponent_info['username']}\n"
                     found_fixture = True
 
     elif current_stage in ["round_of_16", "quarter_finals", "semi_finals", "final"]:
@@ -453,19 +448,11 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         reply_text += f"📅 Your Knockout Match - {player_info['team']}\n\n"
-        # Iterate through knockout matches for the current stage
-        for match_index, match in enumerate(knockout_matches):
-            # === DEFENSIVE CHECK: Ensure 'match' is a list and has enough elements ===
-            if not isinstance(match, list) or len(match) < 4:
-                print(f"WARNING: Malformed match data in Firebase for stage {current_stage}, Match index {match_index}: {match}")
-                continue # Skip to the next match
-
-            # Check if the current user is part of this knockout match
+        for match in knockout_matches:
             if user_id == match[0] or user_id == match[1]:
                 opponent_id = match[1] if match[0] == user_id else match[0]
                 opponent_info = players.get(opponent_id)
                 if opponent_info:
-                    # Format score status: (score1-score2) or (Pending)
                     score_status = f"({match[2]}-{match[3]})" if match[2] is not None and match[3] is not None else "(Pending)"
                     reply_text += (
                         f"*{current_stage.replace('_', ' ').title()}:*\n"
@@ -473,7 +460,7 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"🎮 Opponent: @{opponent_info['username']}\n"
                     )
                     found_fixture = True
-                break # A user should only have one knockout match per stage, so break after finding it
+                break
 
     if found_fixture:
         await update.message.reply_text(reply_text, parse_mode='Markdown')
