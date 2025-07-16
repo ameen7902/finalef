@@ -229,6 +229,8 @@ async def handle_team_selection(update: Update, context: ContextTypes.DEFAULT_TY
     await query.edit_message_text(f"✅ Team selected: {team_full_name}\n\nNow send your PES username:")
     return REGISTER_PES
 
+
+
 async def receive_pes_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     pes_name = update.message.text.strip()
@@ -239,8 +241,13 @@ async def receive_pes_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Something went wrong. Try /register again.")
         unlock_user()
         return ConversationHandler.END
-    html_escaped_user_display_name = html.escape(user_display_name) 
-    html_escaped_team_name = html.escape(team)
+
+    # --- THESE LINES ARE CRUCIAL AND MUST BE HERE ---
+    user_display_name = user.username or user.first_name # <-- This line defines user_display_name
+    html_escaped_user_display_name = html.escape(user_display_name)
+    html_escaped_team_name = html.escape(team) # team is already defined above, so we can escape it
+    # -------------------------------------------------
+
     players[str(user.id)] = {
         "name": user.first_name,
         "username": user.username or "NoUsername",
@@ -253,13 +260,14 @@ async def receive_pes_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_state("players", players)
     unlock_user()
 
-    await context.bot.send_message(chat_id=user.id, text=f"✅ Registered!\n🏳️ Team: {team}\n🎮 PES: {pes_name}")
+    # Message to the user's DM (removed duplicate)
     await context.bot.send_message(
         chat_id=user.id,
         text=f"✅ Registered!\n🏳️ Team: {team}\n🎮 PES: {pes_name}"
     )
 
     # --- Construct the group message using HTML ---
+    # The entire message will be bold because of the outer <b> tags.
     group_message_text = (
         f"<b>✅ It's official! @{html_escaped_user_display_name}, representing {html_escaped_team_name}, "
         f"has successfully qualified for the FIFA WORLD CUP 2014!🏆⚽️</b>"
@@ -267,7 +275,7 @@ async def receive_pes_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(
         chat_id=GROUP_ID,
         text=group_message_text,
-        parse_mode=ParseMode.HTML # <--- IMPORTANT: Changed to ParseMode.HTML
+        parse_mode=ParseMode.HTML # <--- IMPORTANT: This is ParseMode.HTML
     )
 
     return ConversationHandler.END
