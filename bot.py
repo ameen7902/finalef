@@ -718,11 +718,12 @@ def update_player_stats(players_data, player_id, opponent_id, player_score, oppo
         opponent_stats['points'] += 1
 
     # No need to explicitly save_state here, as the caller will save it once updates are complete.
+# Assuming current_admin_matches = {} is defined globally at the top of your script
+
 async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global current_admin_matches # Declare global scope for modification
 
-    if update.effective_user.id != ADMIN_ID:
-        # Initial error message also needs MarkdownV2 parse_mode
+    if str(update.effective_user.id) != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized\\.", parse_mode=ParseMode.MARKDOWN_V2) 
         return
 
@@ -733,12 +734,11 @@ async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_group_round = tournament_state.get("group_match_round", 0) 
 
     if not fixtures_data or not current_stage:
-        # Escaped period for MarkdownV2
         await update.message.reply_text("❌ No matches currently scheduled for any stage\\.", parse_mode=ParseMode.MARKDOWN_V2) 
         return
 
-    # Escaped stage title for the header, using MarkdownV2
-    reply = f"📋 Matches for {escape_markdown_v2(current_stage.replace('_', ' ').title())}:\n\n"
+    # Beautified header
+    reply = f"📅 *Upcoming Matches for {escape_markdown_v2(current_stage.replace('_', ' ').title())}:*\n\n"
     
     current_admin_matches.clear() 
     idx = 1 
@@ -762,11 +762,10 @@ async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             "p2_id": p2_id,
                             "round_num": round_num 
                         }
-                        # All parts escaped for MarkdownV2: /matchX, team names, group name, parentheses, and hyphen
+                        # Added emojis and consistent MarkdownV2 escaping
                         reply += (
-                            f"/{escape_markdown_v2(f'match{idx}')} → " 
-                            f"{escape_markdown_v2(p1.get('team', 'Unknown Player'))} vs "
-                            f"{escape_markdown_v2(p2.get('team', 'Unknown Player'))} "
+                            f"✨ /{escape_markdown_v2(f'match{idx}')} → " 
+                            f"*{escape_markdown_v2(p1.get('team', 'Unknown Player'))}* vs *{escape_markdown_v2(p2.get('team', 'Unknown Player'))}* "
                             f"\\(Group {escape_markdown_v2(group_name)} \\- Round {round_num + 1}\\)\n" 
                         )
                         idx += 1
@@ -782,34 +781,27 @@ async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 p2 = players_data.get(p2_id)
                 if p1 and p2:
                     current_admin_matches[f"match{idx}"] = {"type": "knockout", "stage": current_stage, "p1_id": p1_id, "p2_id": p2_id}
-                    # All parts escaped for MarkdownV2: /matchX, team names, stage name, and parentheses
+                    # Added emojis and consistent MarkdownV2 escaping
                     reply += (
-                        f"/{escape_markdown_v2(f'match{idx}')} → " 
-                        f"{escape_markdown_v2(p1.get('team', 'Unknown Player'))} vs "
-                        f"{escape_markdown_v2(p2.get('team', 'Unknown Player'))} "
+                        f"⚔️ /{escape_markdown_v2(f'match{idx}')} → " 
+                        f"*{escape_markdown_v2(p1.get('team', 'Unknown Player'))}* vs *{escape_markdown_v2(p2.get('team', 'Unknown Player'))}* "
                         f"\\({escape_markdown_v2(current_stage.replace('_', ' ').title())}\\)\n"
                     )
                     idx += 1
     
-    # --- Provide feedback if no matches found ---
+    # --- Provide feedback if no matches found (Beautified) ---
     if idx == 1: 
-        # All messages are now fully escaped for MarkdownV2
-        reply = f"✅ All matches for the current {escape_markdown_v2(current_stage.replace('_', ' ').title())} are completed\\."
+        reply = f"👍 *All matches for the current {escape_markdown_v2(current_stage.replace('_', ' ').title())} are complete!* ✅"
         
         if current_stage == "group_stage":
-            # Fixed typo "advance__group__round" to "advance_group_round" and escaped underscores
             reply += f"\nAdmin can now use /{escape_markdown_v2('advance_group_round')} to proceed\\." 
         elif current_stage == "group_stage_completed":
-            # Escaped period for MarkdownV2
             reply += f"\nGroup stage is finished\\. Admin needs to draw knockout stages\\." 
 
-    # --- Add score reporting instruction ---
-    # Escaped the example command and hyphen for MarkdownV2
+    # --- Add score reporting instruction (Beautified slightly) ---
     reply += f"\n\nTo add score: /{escape_markdown_v2('match1')} 2\\-1" 
 
-    # --- Send the formatted reply with ParseMode.MARKDOWN_V2 ---
     await update.message.reply_text(reply, parse_mode=ParseMode.MARKDOWN_V2)
-
 
 async def handle_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1218,28 +1210,25 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
     tournament_state = load_state("tournament_state")
 
     # --- Input Validation and Pre-processing ---
-    # Ensure scores are integers
     try:
         score1 = int(score1)
         score2 = int(score2)
     except ValueError:
-        await update.message.reply_text("❌ Scores must be numbers.")
+        await update.message.reply_text("❌ Scores must be numbers.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     if score1 == score2:
-        await update.message.reply_text("❌ Knockout matches cannot be a draw. Please enter a decisive score.")
+        await update.message.reply_text("❌ Knockout matches cannot be a draw\\. Please enter a decisive score\\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
-    # Determine winner and loser IDs
     winner_id = p1_id if score1 > score2 else p2_id
     loser_id = p2_id if score1 > score2 else p1_id
 
-    # Retrieve player info
     winner_info = players_data.get(winner_id)
     loser_info = players_data.get(loser_id)
 
     if not winner_info or not loser_info:
-        await update.message.reply_text("❌ Error: Could not find player information for one or both participants.")
+        await update.message.reply_text("❌ Error: Could not find player information for one or both participants\\.", parse_mode=ParseMode.MARKDOWN_V2)
         print(f"ERROR: Missing player info for winner_id={winner_id} or loser_id={loser_id}.")
         return
 
@@ -1254,44 +1243,41 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
     current_matches = fixtures_data.get(stage, [])
     match_found_and_updated = False
     for i, match in enumerate(current_matches):
-        # Ensure match has at least 2 elements (player IDs) before checking
         if not isinstance(match, list) or len(match) < 2:
             print(f"WARNING: Skipping malformed match in current_matches: {match}")
             continue
 
-        # Check if the reported players match any stored match, regardless of order
         if (match[0] == p1_id and match[1] == p2_id):
-            # If the stored order matches the reported order
             current_matches[i] = [p1_id, p2_id, score1, score2]
             match_found_and_updated = True
             break
         elif (match[0] == p2_id and match[1] == p1_id):
-            # If the stored order is reversed compared to the reported order
-            current_matches[i] = [p2_id, p1_id, score2, score1] # Store scores in order of stored IDs
+            current_matches[i] = [p2_id, p1_id, score2, score1] 
             match_found_and_updated = True
             break
 
     if not match_found_and_updated:
-        await update.message.reply_text("❌ Error: Knockout match not found or already processed in fixtures for this stage.")
+        await update.message.reply_text("❌ Error: Knockout match not found or already processed in fixtures for this stage\\.", parse_mode=ParseMode.MARKDOWN_V2)
         print(f"ERROR: Knockout match {p1_id}-{p2_id} not found/updated in stage {stage}.")
         return
 
-    # Save the updated fixtures data
     fixtures_data[stage] = current_matches
     save_state("fixtures", fixtures_data)
     print(f"DEBUG: Fixtures data saved for stage {stage} after score update.")
 
-    # --- Send Confirmation Messages ---
+    # --- Send Confirmation Messages (Beautified) ---
+    # Confirmation for the admin
     await update.message.reply_text(
-        f"✅ Score {score1}-{score2} recorded for {winner_team_escaped} vs {loser_team_escaped}\\. "
+        f"🎉 *Match Result Recorded!* Score {score1}-{score2} for {winner_team_escaped} vs {loser_team_escaped}\\. "
         f"*{winner_team_escaped}* advances\\! @{winner_username_escaped}",
         parse_mode=ParseMode.MARKDOWN_V2
     )
+    # Announcement to the main group
     await context.bot.send_message(
         GROUP_ID,
-        f"🔥 *Knockout Result ({stage_title_escaped}):*\n"
-        f"*{winner_team_escaped} {score1} - {score2} {loser_team_escaped}*\n"
-        f"*{winner_team_escaped}* advances to the next round\\! @{winner_username_escaped}",
+        f"🏆 *KNOCKOUT BATTLE!* \\- *{stage_title_escaped}*\n" # Escaped hyphen
+        f"*{winner_team_escaped}* {score1} \\- {score2} *{loser_team_escaped}*\n" # Escaped hyphen
+        f"🌟 *{winner_team_escaped}* advances to the next round\\! @{winner_username_escaped}", # Escaped exclamation mark
         parse_mode=ParseMode.MARKDOWN_V2
     )
     print(f"DEBUG: Score notification sent for {winner_team_escaped} vs {loser_team_escaped}.")
@@ -1299,7 +1285,6 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
     # --- Check for Stage Completion and Advance ---
     all_matches_completed = True
     for match in current_matches:
-        # A match is considered complete if both scores are not None
         if match[2] is None or match[3] is None:
             all_matches_completed = False
             break
@@ -1308,7 +1293,6 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
 
     if all_matches_completed:
         next_stage = ""
-        # Determine the next stage based on the current stage
         if stage == "round_of_16":
             next_stage = "quarter_finals"
         elif stage == "quarter_finals":
@@ -1319,12 +1303,16 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
             next_stage = "completed"
 
         if next_stage == "completed":
-            # Tournament is over!
-            final_winner_team = winner_team_escaped # The last winner is the champion
-            final_winner_username = winner_username_escaped
+            # Tournament is over! (Beautified)
+            final_winner_info = players_data.get(winner_id) # Get winner info again, it's the last winner
+            final_winner_team_escaped = escape_markdown_v2(final_winner_info.get('team', 'Unknown Team'))
+            final_winner_username_escaped = escape_markdown_v2(final_winner_info.get('username', 'unknown_user'))
+
             await context.bot.send_message(
                 GROUP_ID, 
-                f"🏆 Tournament Concluded\\! The Champion is *{final_winner_team}* (@{final_winner_username})\!",
+                f"👑 *A NEW CHAMPION IS CROWNED!* 👑\n"
+                f"🎉 The tournament has concluded and the winner is *{final_winner_team_escaped}* (@{final_winner_username_escaped})\\!\n"
+                f"Congratulations to the champion and thank you to all participants\\! 🙏", # Escaped exclamation mark
                 parse_mode=ParseMode.MARKDOWN_V2
             )
             tournament_state["stage"] = "completed"
@@ -1332,44 +1320,132 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
             print("DEBUG: Tournament completed!")
             return
 
-        # Collect winners in the order of their matches to preserve bracket integrity
         winners_of_current_stage_ordered = []
         for match in current_matches:
             if match[2] is not None and match[3] is not None:
                 winner = match[0] if match[2] > match[3] else match[1]
                 winners_of_current_stage_ordered.append(winner)
             else:
-                # This case should ideally not be hit if all_matches_completed is True
                 print(f"WARNING: Found incomplete match while collecting winners for next stage: {match}")
-
-        # DO NOT random.shuffle(winners_of_current_stage_ordered)
-        # This is where bracket integrity is maintained by sequential pairing
 
         next_stage_fixtures = []
         for i in range(0, len(winners_of_current_stage_ordered), 2):
             if i + 1 < len(winners_of_current_stage_ordered):
-                # Pair winner i with winner i+1
                 next_stage_fixtures.append([winners_of_current_stage_ordered[i], winners_of_current_stage_ordered[i+1], None, None])
             else:
                 print(f"WARNING: Odd number of winners ({len(winners_of_current_stage_ordered)}) for {next_stage}. This indicates an issue in bracket generation or reporting.")
-                # You might want to handle this more robustly, e.g., give a bye to the last winner
 
-        # Save the new stage fixtures and update tournament state
         fixtures_data[next_stage] = next_stage_fixtures
         tournament_state["stage"] = next_stage
         save_state("fixtures", fixtures_data)
         save_state("tournament_state", tournament_state)
         print(f"DEBUG: Advanced to {next_stage}. New fixtures: {json.dumps(next_stage_fixtures, indent=2)}")
 
-        # Notify the group about advancing to the next stage and new matches
+        # Notify the group about advancing to the next stage and new matches (Beautified)
         await context.bot.send_message(
             GROUP_ID, 
-            f"🥳 All {stage_title_escaped} matches completed\\! Advancing to {escape_markdown_v2(next_stage.replace('_', ' ').title())}\\!",
+            f"🌟 *ALL MATCHES CONCLUDED!* \\- *{stage_title_escaped}*\n" # Escaped hyphen
+            f"🥳 Advancing to {escape_markdown_v2(next_stage.replace('_', ' ').title())}\\! Get ready for the next round of battles\\! 💪", # Escaped exclamation mark
             parse_mode=ParseMode.MARKDOWN_V2
         )
         await notify_knockout_matches(context, next_stage)
         print(f"DEBUG: Notifications sent for {next_stage} start.")
+        
+def get_player_team_name(player_id, players_data):
+    return players_data.get(player_id, {}).get('team', f'Unknown Player ({player_id})')
 
+async def show_knockout_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    fixtures_data = load_state("fixtures")
+    players_data = load_state("players")
+    tournament_state = load_state("tournament_state")
+    current_stage = tournament_state.get("stage")
+
+    knockout_stages_order = ["round_of_16", "quarter_finals", "semi_finals", "final"]
+
+    # Escape current stage title for general messages
+    current_stage_title_escaped = escape_markdown_v2(current_stage.replace('_', ' ').title())
+
+    if current_stage not in knockout_stages_order and current_stage != "completed":
+        # Beautified message for non-knockout/non-completed stages
+        await update.message.reply_text(
+            f"ℹ️ *Tournament Stage:* {current_stage_title_escaped} \\(Knockout bracket not active yet\\)\\.\n\n"
+            f"Check group details with /showgroups \\! 📊",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+    elif current_stage == "completed":
+        final_winner_id = None
+        final_stage_matches = fixtures_data.get("final", [])
+        if final_stage_matches and final_stage_matches[0][2] is not None:
+            # Assuming final_stage_matches[0] is the only match and it's played
+            match = final_stage_matches[0]
+            if match[2] > match[3]:
+                final_winner_id = match[0]
+            else:
+                final_winner_id = match[1]
+        
+        if final_winner_id:
+            winner_team = escape_markdown_v2(get_player_team_name(final_winner_id, players_data))
+            # Beautified message for completed tournament with winner
+            reply = (
+                f"🎉 *Tournament FINISHED!* 🎉\n"
+                f"🏆 Your Champion: *{winner_team}*\\!\n\n"
+                f"Here's the complete bracket overview:\n\n"
+            )
+        else:
+            # Beautified message for completed tournament without winner result
+            reply = (
+                f"😔 *Tournament Finished!* 😔\n"
+                f"Final match result unavailable\\. Here's the bracket status:\n\n"
+            )
+    else:
+        # Beautified header for active knockout stage
+        reply = f"🥊 *Knockout Bracket: {current_stage_title_escaped}* 🥊\n\n"
+
+
+    # Iterate through all knockout stages to build the full bracket view
+    for stage_name in knockout_stages_order:
+        stage_title_escaped = escape_markdown_v2(stage_name.replace('_', ' ').title()) # Re-escape for internal stage headers
+        matches_in_stage = fixtures_data.get(stage_name, [])
+
+        if not matches_in_stage:
+            # Check if this stage is in the future relative to current_stage
+            if knockout_stages_order.index(stage_name) > knockout_stages_order.index(current_stage):
+                # Beautified message for future stages (not yet drawn)
+                reply += f"--- 🔮 *{stage_title_escaped}:* \\(Matches to be drawn\\) ---\n\n"
+            elif stage_name == "final" and current_stage == "semi_finals":
+                # Beautified message for final when semi-final winners are TBD
+                 reply += f"--- 🗓️ *{stage_title_escaped}:* \\(Teams TBD\\) ---\n\n"
+            # else: don't print if it's a past stage that somehow got empty (shouldn't happen with proper flow)
+            continue
+        
+        # Beautified stage header
+        reply += f"--- ✨ *{stage_title_escaped}* ✨ ---\n"
+        
+        for match_num, match in enumerate(matches_in_stage, 1):
+            if not isinstance(match, list) or len(match) < 4:
+                print(f"WARNING: Skipping malformed match in {stage_name}: {match}")
+                continue
+
+            p1_id, p2_id, score1, score2 = match[:4]
+
+            p1_team = escape_markdown_v2(get_player_team_name(p1_id, players_data))
+            p2_team = escape_markdown_v2(get_player_team_name(p2_id, players_data))
+
+            if score1 is not None and score2 is not None:
+                # Beautified completed match line: bold teams, explicit winner arrow
+                winner_team = p1_team if score1 > score2 else p2_team
+                loser_team = p2_team if score1 > score2 else p1_team
+                reply += (
+                    f"✅ *{p1_team}* {score1} \\- {score2} *{p2_team}* "
+                    f"\\(Winner: *{winner_team}*\\) ➡️\n" # Added right arrow emoji
+                )
+            else:
+                # Beautified pending match line: bold teams, more descriptive status
+                reply += f"⏳ *{p1_team}* vs *{p2_team}* \\(Awaiting Result\\) ➡️\n" # Added right arrow emoji
+        reply += "\n" # Spacing between stages
+
+    await update.message.reply_text(reply, parse_mode=ParseMode.MARKDOWN_V2)
 async def reset_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Only the admin can reset the tournament.")
@@ -1419,6 +1495,7 @@ def setup_bot_handlers_sync(app_instance: Application) -> None:
     app_instance.add_handler(CommandHandler("fixtures", fixtures))
     app_instance.add_handler(CommandHandler("standings", group_standings))
     application.add_handler(CommandHandler("advance_group_round", advance_group_round))
+    
     # Dynamically add handlers for /matchX commands for admin scores
     for i in range(1, 101): # Assuming up to 100 matches
         app_instance.add_handler(CommandHandler(f"match{i}", handle_score))
