@@ -43,7 +43,7 @@ TEAM_LIST = [
 ]
 
 # Conversation state for PES name entry
-REGISTER_PES = 1 
+REGISTER_PES = 1
 
 # === FIREBASE UTILITIES ===
 def init_firebase():
@@ -280,7 +280,7 @@ async def set_bot_commands(application_instance):
         BotCommand("reset_tournament", "Admin: Clear all tournament data"),
     ]
     await application_instance.bot.set_my_commands(commands)
-    print("Bot commands set.")
+    # print("Bot commands set.") # This print will now happen after the await
 
 # === TOURNAMENT LOGIC ===
 
@@ -405,7 +405,7 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     players = load_state("players")
     groups_data = load_state("groups")
-    
+
     if not groups_data:
         await update.message.reply_text("❌ Groups have not been formed yet.")
         return
@@ -427,21 +427,21 @@ async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "draws": stats.get("draws", 0),
                     "losses": stats.get("losses", 0)
                 })
-        
+
         standings.sort(key=lambda x: (x['points'], x['gd'], x['gf']), reverse=True)
 
         group_text = f"📊 *{group_name} Standings:*\n"
-        group_text += "Team       | Pts | GD | GF | W-D-L\n"
+        group_text += "Team        | Pts | GD | GF | W-D-L\n"
         group_text += "--------------------------------------\n"
         for team_stat in standings:
-            team_display = (team_stat['team'] + "         ")[:10]
+            team_display = (team_stat['team'] + "          ")[:10]
             group_text += (
                 f"{team_display} | {team_stat['points']:<3} | {team_stat['gd']:<2} | {team_stat['gf']:<2} | "
                 f"{team_stat['wins']}-{team_stat['draws']}-{team_stat['losses']}\n"
             )
         group_text += "\n"
         all_standings += group_text
-    
+
     if all_standings:
         await update.message.reply_text(all_standings, parse_mode='Markdown')
     else:
@@ -489,7 +489,7 @@ async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     current_admin_matches[f"match{idx}"] = {"type": "knockout", "stage": current_stage, "p1_id": p1_id, "p2_id": p2_id}
                     reply += f"/match{idx} → {p1['team']} vs {p2['team']} ({current_stage.replace('_', ' ').title()})\n"
                     idx += 1
-    
+
     if not current_admin_matches:
         reply = "✅ All matches for this stage are completed. Use /start_tournament (if admin) to advance or /addscore later for next stage."
 
@@ -554,7 +554,7 @@ async def handle_group_score(update: Update, context: ContextTypes.DEFAULT_TYPE,
             group_matches[i] = [p2_id, p1_id, score2, score1]
             match_found = True
             break
-    
+
     if not match_found:
         await update.message.reply_text("❌ Error: Group match not found in fixtures.")
         return
@@ -586,9 +586,9 @@ async def handle_group_score(update: Update, context: ContextTypes.DEFAULT_TYPE,
         player2_stats["draws"] += 1
         player2_stats["points"] += 1
         winner_name = "Draw"
-    
+
     players[p1_id]["stats"] = player1_stats
-    players[p2_id]["stats"] = player2_stats
+    players[p2_id]["stats"] = player2_2stats
 
     save_state("fixtures", fixtures_data)
     save_state("players", players)
@@ -604,7 +604,7 @@ async def handle_group_score(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 break
         if not all_group_matches_completed:
             break
-    
+
     if all_group_matches_completed:
         await context.bot.send_message(ADMIN_ID, "All group stage matches completed! Initiating knockout stage.")
         await advance_to_knockout(context)
@@ -620,23 +620,23 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
 
     for group_name in sorted(groups_data.keys()):
         group_players_ids = groups_data[group_name]
-        
+
         standings_for_group = []
         for p_id in group_players_ids:
             player_info = players.get(p_id)
             if player_info:
                 standings_for_group.append((p_id, player_info))
-        
+
         standings_for_group.sort(key=lambda x: (x[1]['stats']['points'], x[1]['stats']['gd'], x[1]['stats']['gf']), reverse=True)
-        
+
         all_qualified_sorted.extend(standings_for_group[:2])
-    
+
     r16_matchups = []
     r16_matchups.append([all_qualified_sorted[0][0], all_qualified_sorted[3][0], None, None]) # 1A vs 2B
     r16_matchups.append([all_qualified_sorted[4][0], all_qualified_sorted[7][0], None, None]) # 1C vs 2D
     r16_matchups.append([all_qualified_sorted[8][0], all_qualified_sorted[11][0], None, None]) # 1E vs 2F
     r16_matchups.append([all_qualified_sorted[12][0], all_qualified_sorted[15][0], None, None]) # 1G vs 2H
-    
+
     r16_matchups.append([all_qualified_sorted[2][0], all_qualified_sorted[1][0], None, None]) # 1B vs 2A
     r16_matchups.append([all_qualified_sorted[6][0], all_qualified_sorted[5][0], None, None]) # 1D vs 2C
     r16_matchups.append([all_qualified_sorted[10][0], all_qualified_sorted[9][0], None, None]) # 1F vs 2E
@@ -653,7 +653,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
 async def notify_knockout_matches(context: ContextTypes.DEFAULT_TYPE, stage: str):
     fixtures_data = load_state("fixtures")
     players_data = load_state("players")
-    
+
     matches = fixtures_data.get(stage, [])
     if not matches:
         return
@@ -692,7 +692,7 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
             current_matches[i] = [p2_id, p1_id, score2, score1]
             match_found_and_updated = True
             break
-    
+
     if not match_found_and_updated:
         await update.message.reply_text("❌ Error: Knockout match not found or already processed in fixtures.")
         return
@@ -711,7 +711,7 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
         if match[2] is None:
             all_matches_completed = False
             break
-    
+
     if all_matches_completed:
         next_stage = ""
         if stage == "round_of_16":
@@ -722,7 +722,7 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
             next_stage = "final"
         elif stage == "final":
             next_stage = "completed"
-        
+
         if next_stage == "completed":
             await context.bot.send_message(GROUP_ID, f"🏆 Tournament Concluded! The Champion is {winner_info['team']} (@{winner_info['username']})!")
             tournament_state["stage"] = "completed"
@@ -734,7 +734,7 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
             if match[2] is not None and match[3] is not None:
                 winner = match[0] if match[2] > match[3] else match[1]
                 winners_of_current_stage.append(winner)
-        
+
         random.shuffle(winners_of_current_stage)
 
         next_stage_fixtures = []
@@ -743,7 +743,7 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
                 next_stage_fixtures.append([winners_of_current_stage[i], winners_of_current_stage[i+1], None, None])
             else:
                 print(f"Warning: Odd number of winners for {next_stage}. This should not happen in a perfect bracket.")
-        
+
         fixtures_data[next_stage] = next_stage_fixtures
         tournament_state["stage"] = next_stage
         save_state("fixtures", fixtures_data)
@@ -753,7 +753,7 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
         await notify_knockout_matches(context, next_stage)
 
 
-async def reset_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def reset_tournament(update: Update.Message, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Only the admin can reset the tournament.")
         return
@@ -771,99 +771,13 @@ async def reset_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- PTB Application Setup and Run Logic ---
 
-async def main():
-    # Initialize Firebase once
-    print("--- Initializing Firebase ---")
-    init_firebase()
-    if firebase_db_ref is None:
-        print("FATAL: Firebase could not be initialized. Exiting.")
-        # Exit or handle gracefully depending on if DB is strictly required for startup
-        return # Or sys.exit(1) if you want to stop the process
+# We define the application instance globally or pass it.
+# The previous partial `main` function was causing a conflict.
+application = None # Initialize as None, will be set in __main__
 
-    # Build the PTB Application instance
-    application = Application.builder().token(BOT_TOKEN).build()
-
-    # Register handlers
-    conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(handle_team_selection, pattern=r"^team_select:")],
-        states={
-            REGISTER_PES: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_pes_name)],
-        },
-        fallbacks=[CommandHandler('cancel', cancel_registration)],
-        allow_reentry=True
-    )
-
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(CommandHandler('register', register))
-    application.add_handler(CommandHandler('fixtures', fixtures))
-    application.add_handler(CommandHandler('standings', group_standings))
-    application.add_handler(CommandHandler('addscore', addscore))
-    application.add_handler(MessageHandler(filters.Regex(r"^/match[0-9]+ "), handle_score))
-    application.add_handler(CommandHandler("addrule", addrule))
-    application.add_handler(CommandHandler("rules", rules))
-    application.add_handler(CommandHandler("players", players_list))
-    application.add_handler(CommandHandler("start_tournament", start_tournament))
-    application.add_handler(CommandHandler("reset_tournament", reset_tournament))
-    application.add_handler(conv_handler)
-
-    # Set bot commands (this will be done once on startup)
-    await set_bot_commands(application)
-
-    # Environment variables for webhook setup on Railway
-    WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
-    PORT = int(os.environ.get("PORT", 8080)) # Railway provides a PORT env var
-
-    if WEBHOOK_URL and BOT_TOKEN:
-        # For Railway deployment (webhook mode)
-        print(f"--- Starting bot in webhook mode on port {PORT} ---")
-        # Ensure the webhook URL provided to Telegram includes the path
-        webhook_path = "/telegram-webhook" # Can be any unique path
-        full_webhook_url = f"{WEBHOOK_URL}{webhook_path}"
-        
-        await application.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path=webhook_path,
-            webhook_url=full_webhook_url,
-            drop_pending_updates=True # Good for fresh deployments
-        )
-    else:
-        # For local development (polling mode) or if WEBHOOK_URL/BOT_TOKEN not set
-        print("--- Starting bot in polling mode (local development or missing env vars) ---")
-        await application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
-
-# This block ensures `main()` is run when the script is executed by `python bot.py`
-# ... (all your existing imports, functions, and handlers go here,
-#      including init_firebase(), set_bot_commands(), etc.) ...
-
-# --- PTB Application Setup and Run Logic ---
-
-# ... (all your existing imports, functions, and handlers go here,
-#      including init_firebase(), set_bot_commands(), etc.) ...
-
-# --- PTB Application Setup and Run Logic ---
-
-# ... (all your existing imports, functions, and handlers go here) ...
-
-# --- PTB Application Setup and Run Logic ---
-
-# ... (all your existing imports, functions, and handlers go here) ...
-
-# --- PTB Application Setup and Run Logic (Polling Mode Only) ---
-
-if __name__ == '__main__':
-    # Initialize Firebase once
-    print("--- Initializing Firebase ---")
-    init_firebase()
-    if firebase_db_ref is None:
-        print("FATAL: Firebase could not be initialized. Exiting.")
-        import sys
-        sys.exit(1) # Ensure the script exits if Firebase is critical
-
-    print("--- Setting up bot application ---")
-    application = Application.builder().token(BOT_TOKEN).build()
-
-    # Add handlers (this section remains the same, assuming it's correct)
+# This function will handle all the synchronous setup of your bot
+def setup_bot_handlers_sync(app_instance: Application) -> None:
+    # Add handlers
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("register", register)],
         states={
@@ -871,31 +785,54 @@ if __name__ == '__main__':
         },
         fallbacks=[CommandHandler("cancel", cancel_registration)],
     )
-    application.add_handler(conv_handler)
+    app_instance.add_handler(conv_handler)
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("rules", rules))
-    application.add_handler(CommandHandler("players", players_list))
-    application.add_handler(CommandHandler("addrule", addrule))
-    application.add_handler(CommandHandler("start_tournament", start_tournament))
-    application.add_handler(CommandHandler("fixtures", fixtures))
-    application.add_handler(CommandHandler("standings", group_standings))
+    app_instance.add_handler(CommandHandler("start", start))
+    app_instance.add_handler(CommandHandler("rules", rules))
+    app_instance.add_handler(CommandHandler("players", players_list))
+    app_instance.add_handler(CommandHandler("addrule", addrule))
+    app_instance.add_handler(CommandHandler("start_tournament", start_tournament))
+    app_instance.add_handler(CommandHandler("fixtures", fixtures))
+    app_instance.add_handler(CommandHandler("standings", group_standings))
 
+    # Dynamically add handlers for /matchX commands for admin scores
     for i in range(1, 101): # Assuming up to 100 matches
-        application.add_handler(CommandHandler(f"match{i}", handle_score))
+        app_instance.add_handler(CommandHandler(f"match{i}", handle_score))
 
-    application.add_handler(CommandHandler("addscore", addscore))
-    application.add_handler(CommandHandler("reset_tournament", reset_tournament))
+    app_instance.add_handler(CommandHandler("addscore", addscore))
+    app_instance.add_handler(CommandHandler("reset_tournament", reset_tournament))
 
-    application.add_handler(CallbackQueryHandler(handle_team_selection, pattern=r"^team_select:"))
+    app_instance.add_handler(CallbackQueryHandler(handle_team_selection, pattern=r"^team_select:"))
+    print("--- Handlers added ---") # Moved print here for clearer flow
 
+# This is the main asynchronous function that will be executed by asyncio.run
+async def run_polling_mode_bot():
+    global application # Access the global application instance
 
-    # --- Simplified Polling-Only Run ---
-    async def start_polling_bot():
-        await set_bot_commands(application) # Set bot commands
-        print("--- Starting bot in polling mode ---")
-        # Run the bot in polling mode. drop_pending_updates=True clears old updates on startup.
-        await application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+    # Set bot commands (this is an async operation and must be awaited)
+    await set_bot_commands(application)
+    
+    print("--- Starting bot in polling mode ---")
+    # This call will block and run the bot's polling loop indefinitely
+    await application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
-    # Use asyncio.run to start the polling bot. This should handle the event loop correctly.
-    asyncio.run(start_polling_bot())
+# Main entry point for the script
+if __name__ == '__main__':
+    # Initialize Firebase once (synchronous)
+    print("--- Initializing Firebase ---")
+    init_firebase()
+    if firebase_db_ref is None:
+        print("FATAL: Firebase could not be initialized. Exiting.")
+        import sys
+        sys.exit(1)
+
+    print("--- Setting up bot application ---")
+    # Build the Application instance (synchronous)
+    application = Application.builder().token(BOT_TOKEN).build()
+
+    # Set up all synchronous handlers and other configuration
+    setup_bot_handlers_sync(application)
+
+    # Now, run the main asynchronous part using asyncio.run
+    # This is the single, top-level entry for async operations.
+    asyncio.run(run_polling_mode_bot())
