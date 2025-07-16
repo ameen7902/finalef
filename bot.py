@@ -940,7 +940,7 @@ async def handle_group_score(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
 async def advance_group_round(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    # ADMIN_ID="7366894756"
+    ADMIN_ID="7366894756"
     if user_id != ADMIN_ID:
         await update.message.reply_text("❌ Only the admin can advance tournament rounds.")
         return
