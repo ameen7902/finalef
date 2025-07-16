@@ -838,6 +838,11 @@ async def main():
 
 # --- PTB Application Setup and Run Logic ---
 
+# ... (all your existing imports, functions, and handlers go here,
+#      including init_firebase(), set_bot_commands(), etc.) ...
+
+# --- PTB Application Setup and Run Logic ---
+
 if __name__ == '__main__':
     # Initialize Firebase once
     print("--- Initializing Firebase ---")
@@ -850,7 +855,7 @@ if __name__ == '__main__':
     print("--- Setting up bot application ---")
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Add handlers
+    # Add handlers (keep this section as it is)
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("register", register)],
         states={
@@ -875,25 +880,36 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler("addscore", addscore))
     application.add_handler(CommandHandler("reset_tournament", reset_tournament))
 
-
     application.add_handler(CallbackQueryHandler(handle_team_selection, pattern=r"^team_select:"))
 
-    # Set bot commands (needs to be awaited, so we'll wrap the application run)
-    async def run_bot():
-        await set_bot_commands(application)
+    # --- THE CRITICAL CHANGE IS HERE ---
+    # We will get the current running loop, or create a new one if none exists.
+    # Then, we directly run the application's webhook/polling.
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError: # No running loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-        WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
-        if WEBHOOK_URL:
-            print("--- Starting bot in webhook mode on port 8080 ---")
-            # Set the webhook on Telegram's side
-            await application.bot.set_webhook(url=WEBHOOK_URL)
-            # Run the webhook server
-            await application.run_webhook(listen="0.0.0.0", port=8080, url_path="webhook", webhook_url=WEBHOOK_URL)
-        else:
-            print("--- Starting bot in polling mode ---")
-            # Run the bot in polling mode (less ideal for Railway)
-            await application.run_polling(drop_pending_updates=True)
+    WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
-    # This is the crucial change: Use asyncio.run() only once to kick off the main async process
-    # which itself then starts the bot's application server.
-    asyncio.run(run_bot())
+    if WEBHOOK_URL:
+        print("--- Starting bot in webhook mode on port 8080 ---")
+        # Use loop.run_until_complete to run the async setup and then the webhook
+        loop.run_until_complete(
+            asyncio.gather(
+                set_bot_commands(application), # set commands first
+                application.bot.set_webhook(url=WEBHOOK_URL), # set webhook on Telegram side
+                application.run_webhook(listen="0.0.0.0", port=8080, url_path="webhook", webhook_url=WEBHOOK_URL) # start webhook server
+            )
+        )
+    else:
+        print("--- Starting bot in polling mode ---")
+        loop.run_until_complete(
+            asyncio.gather(
+                set_bot_commands(application),
+                application.run_polling(drop_pending_updates=True)
+            )
+        )
+    # The loop should now be managed by run_webhook/run_polling
+    # No explicit loop.run_forever() is needed here as application.run_webhook handles it.
