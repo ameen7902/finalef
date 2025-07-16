@@ -1450,7 +1450,7 @@ async def show_knockout_status(update: Update, context: ContextTypes.DEFAULT_TYP
 
     await update.message.reply_text(reply, parse_mode=ParseMode.MARKDOWN_V2)
 async def reset_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ADMIN_ID="7366894756"
+    # ADMIN_ID="7366894756"
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Only the admin can reset the tournament.")
         return
