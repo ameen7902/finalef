@@ -14,7 +14,7 @@ from telegram.ext import (
 )
 # REMOVED: from flask import Flask, request, jsonify # No longer needed
 import html # <--- ADD THIS IMPORT at the top of your bot.py file
-from telegram.constants import ParseModede
+from telegram.constants import ParseMod
 # Firebase Imports
 import firebase_admin
 from firebase_admin import credentials, db
