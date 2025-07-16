@@ -140,6 +140,7 @@ async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"📜 Tournament Rules:\n\n{formatted}")
 
 async def addrule(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ADMIN_ID="7366894756"
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Only the admin can use this command.")
         return
@@ -722,7 +723,7 @@ def update_player_stats(players_data, player_id, opponent_id, player_score, oppo
 
 async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global current_admin_matches # Declare global scope for modification
-
+    ADMIN_ID="7366894756"
     if str(update.effective_user.id) != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized\\.", parse_mode=ParseMode.MARKDOWN_V2) 
         return
@@ -804,6 +805,7 @@ async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(reply, parse_mode=ParseMode.MARKDOWN_V2)
 
 async def handle_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ADMIN_ID="7366894756"
     if update.effective_user.id != ADMIN_ID:
         return
 
@@ -995,7 +997,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     tournament_state = load_state("tournament_state")
     players = load_state("players")
     fixtures_data = load_state("fixtures")
-
+    ADMIN_ID="7366894756"
     # Ensure tournament is in 'group_stage_completed' before proceeding
     if tournament_state.get("stage") != "group_stage_completed":
         print(f"DEBUG: advance_to_knockout called, but tournament state is not 'group_stage_completed'. Current stage: {tournament_state.get('stage')}. Aborting.")
