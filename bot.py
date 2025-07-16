@@ -13,8 +13,8 @@ from telegram.ext import (
     ContextTypes, ConversationHandler
 )
 # REMOVED: from flask import Flask, request, jsonify # No longer needed
-import re # Make sure this is at the top of your file
-from telegram.constants import ParseMode
+import html # <--- ADD THIS IMPORT at the top of your bot.py file
+from telegram.constants import ParseModede
 # Firebase Imports
 import firebase_admin
 from firebase_admin import credentials, db
@@ -228,12 +228,7 @@ async def handle_team_selection(update: Update, context: ContextTypes.DEFAULT_TY
 
     await query.edit_message_text(f"✅ Team selected: {team_full_name}\n\nNow send your PES username:")
     return REGISTER_PES
-def escape_markdown_v2(text: str) -> str:
-    """Helper function to escape special MarkdownV2 characters."""
-    special_chars = r'_*[]()~`>#+-=|{}.!'
-    for char in special_chars:
-        text = text.replace(char, f'\\{char}')
-    return text
+
 async def receive_pes_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     pes_name = update.message.text.strip()
@@ -260,10 +255,20 @@ async def receive_pes_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_message(chat_id=user.id, text=f"✅ Registered!\n🏳️ Team: {team}\n🎮 PES: {pes_name}")
     await context.bot.send_message(
-    chat_id=GROUP_ID,
-    text=f"**✅ It's official\! @{escaped_user_display_name}, representing {escaped_team_name}, has successfully qualified for the FIFA WORLD CUP 2014\!🏆⚽️**",
-    parse_mode=ParseMode.MARKDOWN_V2
-)
+        chat_id=user.id,
+        text=f"✅ Registered!\n🏳️ Team: {team}\n🎮 PES: {pes_name}"
+    )
+
+    # --- Construct the group message using HTML ---
+    group_message_text = (
+        f"<b>✅ It's official! @{html_escaped_user_display_name}, representing {html_escaped_team_name}, "
+        f"has successfully qualified for the FIFA WORLD CUP 2014!🏆⚽️</b>"
+    )
+    await context.bot.send_message(
+        chat_id=GROUP_ID,
+        text=group_message_text,
+        parse_mode=ParseMode.HTML # <--- IMPORTANT: Changed to ParseMode.HTML
+    )
 
     return ConversationHandler.END
 
