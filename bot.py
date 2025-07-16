@@ -753,7 +753,7 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
         await notify_knockout_matches(context, next_stage)
 
 
-async def reset_tournament(update: Update.Message, context: ContextTypes.DEFAULT_TYPE):
+async def reset_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Only the admin can reset the tournament.")
         return
