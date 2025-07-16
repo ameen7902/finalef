@@ -350,6 +350,7 @@ async def make_groups(context: ContextTypes.DEFAULT_TYPE):
 # This function orchestrates everything, gets data from helper functions,
 # and performs the FINAL save of the complete fixtures data.
 async def start_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ADMIN_ID = '7366894756' # Or just a number
     user_id = str(update.effective_user.id)
     if user_id != ADMIN_ID:
         await update.message.reply_text("❌ Only the admin can start the tournament.")
