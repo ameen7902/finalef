@@ -930,8 +930,9 @@ async def handle_group_score(update: Update, context: ContextTypes.DEFAULT_TYPE,
     await context.bot.send_message(
         GROUP_ID,
         f"✅ **Group Match Result:**\n" 
-        f"**{escape_markdown_v2(p1_team_name)}{score1} \\- {score2} {escape_markdown_v2(p2_team_name)}**\n\n"
-        f"_➡️ Check /standings for updated standings\\! 📊_",
+        f"**{escape_markdown_v2(p1_team_name)} {score1} \- {score2} {escape_markdown_v2(p2_team_name)}**\n\n"
+        f"_➡️ Check /standings for updated standings\! 📊_",
+        parse_mode=ParseMode.MARKDOWN_V2
     )
 
     # The logic to check if all matches are completed and advance to knockout
