@@ -45,36 +45,7 @@ TEAM_LIST = [
 
 # Conversation state for PES name entry
 REGISTER_PES = 1
-if os.environ.get("TEST_MODE") == "true":
-    print("DEBUG: TEST_MODE is ON. Injecting dummy players for tournament simulation.")
 
-    # Optional: Clear existing players if you want a fresh start with only dummy data
-    # DANGER: If you uncomment the line below and run it with your LIVE bot,
-    # it WILL WIPE OUT any actual registered players' data!
-    # players = {}
-
-    # --- Generate 32 Dummy Players Using a Loop ---
-    num_dummy_players = 31 # Set the desired number of dummy players
-    for i in range(1, num_dummy_players + 1):
-        player_id = 1000 + i # Unique dummy user ID (e.g., 1001, 1002, ...)
-        player_name = f"Test Player {chr(64 + i)}" if i <= 26 else f"Test Player {i}" # A, B, C... or just numbers
-        username = f"tester_{player_id}"
-        team_name = f"Team {chr(64 + i)} FC" if i <= 26 else f"Team {i} FC" # Unique team names
-        pes_name = f"PES_User_{player_id}"
-
-        players[str(player_id)] = {
-            "user_id": player_id,
-            "name": player_name,
-            "username": username,
-            "team": team_name,
-            "pes": pes_name,
-            "group": None, # Will be filled by create_groups
-            "stats": {"wins": 0, "draws": 0, "losses": 0, "gf": 0, "ga": 0, "points": 0, "gd": 0}
-        }
-    print(f"DEBUG: {num_dummy_players} dummy players injected.")
-
-    save_state("players", players) # This line saves the dummy players to your state file
-    print("DEBUG: Dummy players saved to state.")
 # === FIREBASE UTILITIES ===
 def init_firebase():
     global firebase_db_ref
@@ -913,7 +884,36 @@ if __name__ == '__main__':
         # Build the Application instance, using post_init to set commands
         application = Application.builder().token(BOT_TOKEN).post_init(post_init_setup).build()
         print("--- Telegram Application instance built ---")
+        if os.environ.get("TEST_MODE") == "true":
+    print("DEBUG: TEST_MODE is ON. Injecting dummy players for tournament simulation.")
 
+    # Optional: Clear existing players if you want a fresh start with only dummy data
+    # DANGER: If you uncomment the line below and run it with your LIVE bot,
+    # it WILL WIPE OUT any actual registered players' data!
+    # players = {}
+
+    # --- Generate 32 Dummy Players Using a Loop ---
+    num_dummy_players = 31 # Set the desired number of dummy players
+    for i in range(1, num_dummy_players + 1):
+        player_id = 1000 + i # Unique dummy user ID (e.g., 1001, 1002, ...)
+        player_name = f"Test Player {chr(64 + i)}" if i <= 26 else f"Test Player {i}" # A, B, C... or just numbers
+        username = f"tester_{player_id}"
+        team_name = f"Team {chr(64 + i)} FC" if i <= 26 else f"Team {i} FC" # Unique team names
+        pes_name = f"PES_User_{player_id}"
+
+        players[str(player_id)] = {
+            "user_id": player_id,
+            "name": player_name,
+            "username": username,
+            "team": team_name,
+            "pes": pes_name,
+            "group": None, # Will be filled by create_groups
+            "stats": {"wins": 0, "draws": 0, "losses": 0, "gf": 0, "ga": 0, "points": 0, "gd": 0}
+        }
+    print(f"DEBUG: {num_dummy_players} dummy players injected.")
+
+    save_state("players", players) # This line saves the dummy players to your state file
+    print("DEBUG: Dummy players saved to state.")
         # Set up all synchronous handlers and other configuration
         print("--- Setting up bot handlers ---")
         setup_bot_handlers_sync(application)
