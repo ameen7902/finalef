@@ -723,7 +723,7 @@ def update_player_stats(players_data, player_id, opponent_id, player_score, oppo
 
 async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global current_admin_matches # Declare global scope for modification
-    # ADMIN_ID="7366894756"
+    ADMIN_ID="7366894756"
     if str(update.effective_user.id) != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized\\.", parse_mode=ParseMode.MARKDOWN_V2) 
         return
