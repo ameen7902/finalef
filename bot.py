@@ -773,7 +773,10 @@ async def reset_tournament(update: Update.Message, context: ContextTypes.DEFAULT
 
 # We define the application instance globally or pass it.
 # The previous partial `main` function was causing a conflict.
-application = None # Initialize as None, will be set in __main__
+# ... (all your existing code, imports, functions, handlers etc. above this point) ...
+
+# Global application instance (initialized to None)
+application = None
 
 # This function will handle all the synchronous setup of your bot
 def setup_bot_handlers_sync(app_instance: Application) -> None:
@@ -810,29 +813,60 @@ async def run_polling_mode_bot():
     global application # Access the global application instance
 
     # Set bot commands (this is an async operation and must be awaited)
+    print("--- Setting bot commands ---") # Debug print
     await set_bot_commands(application)
+    print("--- Bot commands set ---") # Debug print
     
     print("--- Starting bot in polling mode ---")
     # This call will block and run the bot's polling loop indefinitely
     await application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+    print("--- Bot polling finished (should not be reached during normal operation) ---") # Debug print
 
 # Main entry point for the script
 if __name__ == '__main__':
-    # Initialize Firebase once (synchronous)
-    print("--- Initializing Firebase ---")
-    init_firebase()
-    if firebase_db_ref is None:
-        print("FATAL: Firebase could not be initialized. Exiting.")
+    print("--- Script execution started ---") # FIRST PRINT STATEMENT
+
+    # Use a global try-except to catch any unexpected errors during startup
+    try:
+        # Initialize Firebase once (synchronous)
+        print("--- Initializing Firebase ---")
+        init_firebase()
+        if firebase_db_ref is None:
+            print("FATAL: Firebase could not be initialized or required ENV vars are missing. Exiting.")
+            import sys # Ensure sys is imported for exit
+            sys.exit(1)
+        print("--- Firebase initialization status: OK ---")
+
+        # Basic check for BOT_TOKEN as it's fundamental
+        if not BOT_TOKEN:
+            print("FATAL: BOT_TOKEN environment variable not set. Cannot run bot. Exiting.")
+            import sys
+            sys.exit(1)
+        print("--- BOT_TOKEN is set ---")
+
+        print("--- Building Telegram Application instance ---")
+        # Build the Application instance (synchronous)
+        global application # Declare intent to use global
+        application = Application.builder().token(BOT_TOKEN).build()
+        print("--- Telegram Application instance built ---")
+
+        # Set up all synchronous handlers and other configuration
+        print("--- Setting up bot handlers ---")
+        setup_bot_handlers_sync(application)
+        print("--- Bot handlers setup complete ---")
+
+        # Now, run the main asynchronous part using asyncio.run
+        print("--- Attempting to start asyncio event loop for polling mode ---")
+        asyncio.run(run_polling_mode_bot())
+
+    except Exception as e:
+        print(f"\n!!! CRITICAL UNHANDLED EXCEPTION DURING BOT STARTUP !!!")
+        print(f"Error type: {type(e).__name__}")
+        print(f"Error message: {e}")
+        import traceback
+        traceback.print_exc() # Print full stack trace
+        print("--- Script terminated due to unhandled exception ---")
         import sys
-        sys.exit(1)
+        sys.exit(1) # Ensure process exits with an error code
 
-    print("--- Setting up bot application ---")
-    # Build the Application instance (synchronous)
-    application = Application.builder().token(BOT_TOKEN).build()
-
-    # Set up all synchronous handlers and other configuration
-    setup_bot_handlers_sync(application)
-
-    # Now, run the main asynchronous part using asyncio.run
-    # This is the single, top-level entry for async operations.
-    asyncio.run(run_polling_mode_bot())
+    print("--- End of script execution path ---") # Should not be reached during normal polling operation
