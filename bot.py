@@ -720,36 +720,38 @@ def update_player_stats(players_data, player_id, opponent_id, player_score, oppo
     # No need to explicitly save_state here, as the caller will save it once updates are complete.
 async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global current_admin_matches # Declare global scope for modification
+
     if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("❌ You are not authorized.")
+        # Initial error message also needs MarkdownV2 parse_mode
+        await update.message.reply_text("❌ You are not authorized\\.", parse_mode=ParseMode.MARKDOWN_V2) 
         return
 
     fixtures_data = load_state("fixtures")
     players_data = load_state("players")
     tournament_state = load_state("tournament_state")
     current_stage = tournament_state.get("stage")
-    current_group_round = tournament_state.get("group_match_round", 0) # Get current round
+    current_group_round = tournament_state.get("group_match_round", 0) 
 
     if not fixtures_data or not current_stage:
-        await update.message.reply_text("❌ No matches currently scheduled.")
+        # Escaped period for MarkdownV2
+        await update.message.reply_text("❌ No matches currently scheduled for any stage\\.", parse_mode=ParseMode.MARKDOWN_V2) 
         return
 
-    reply = f"📋 Matches for {current_stage.replace('_', ' ').title()}:\n\n"
-    current_admin_matches.clear() # Clear previous matches
-    idx = 1
+    # Escaped stage title for the header, using MarkdownV2
+    reply = f"📋 Matches for {escape_markdown_v2(current_stage.replace('_', ' ').title())}:\n\n"
+    
+    current_admin_matches.clear() 
+    idx = 1 
 
     if current_stage == "group_stage":
-        # Admin /addscore should list only matches for the current active round
-        # This makes it easier for admin to manage round by round.
         for group_name, matches in fixtures_data.get("group_stage", {}).items():
             for match in matches:
-                # Ensure match has enough elements (5 for round_number) and belongs to current round
                 if not isinstance(match, list) or len(match) < 5 or match[4] != current_group_round:
-                    continue # Skip malformed or non-current-round matches
+                    continue 
 
-                p1_id, p2_id, score1, score2, round_num = match # Unpack 5 elements
+                p1_id, p2_id, score1, score2, round_num = match 
 
-                if score1 is None: # Only list pending matches
+                if score1 is None: 
                     p1 = players_data.get(p1_id)
                     p2 = players_data.get(p2_id)
                     if p1 and p2:
@@ -758,37 +760,56 @@ async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             "group": group_name,
                             "p1_id": p1_id,
                             "p2_id": p2_id,
-                            "round_num": round_num # Store the round number
+                            "round_num": round_num 
                         }
-                        # Apply escape_markdown_v2 to team names and group name
-                        reply += f"/match{idx} → {escape_markdown_v2(p1['team'])} vs {escape_markdown_v2(p2['team'])} (Group {escape_markdown_v2(group_name)} - Round {round_num + 1})\n"
+                        # All parts escaped for MarkdownV2: /matchX, team names, group name, parentheses, and hyphen
+                        reply += (
+                            f"/{escape_markdown_v2(f'match{idx}')} → " 
+                            f"{escape_markdown_v2(p1.get('team', 'Unknown Player'))} vs "
+                            f"{escape_markdown_v2(p2.get('team', 'Unknown Player'))} "
+                            f"\\(Group {escape_markdown_v2(group_name)} \\- Round {round_num + 1}\\)\n" 
+                        )
                         idx += 1
     elif current_stage in ["round_of_16", "quarter_finals", "semi_finals", "final"]:
-        # Knockout matches still only have 4 elements [p1_id, p2_id, score1, score2]
         for match in fixtures_data.get(current_stage, []):
-            # Ensure match has enough elements (4 for knockout)
             if not isinstance(match, list) or len(match) < 4:
-                continue # Skip malformed matches
+                print(f"WARNING: Skipping malformed knockout match: {match}")
+                continue 
 
-            p1_id, p2_id, score1, score2 = match[:4] # Unpack up to 4 elements
-            if score1 is None:
+            p1_id, p2_id, score1, score2 = match[:4] 
+            if score1 is None: 
                 p1 = players_data.get(p1_id)
                 p2 = players_data.get(p2_id)
                 if p1 and p2:
                     current_admin_matches[f"match{idx}"] = {"type": "knockout", "stage": current_stage, "p1_id": p1_id, "p2_id": p2_id}
-                    # Apply escape_markdown_v2 to team names and stage name
-                    reply += f"/match{idx} → {escape_markdown_v2(p1['team'])} vs {escape_markdown_v2(p2['team'])} ({escape_markdown_v2(current_stage.replace('_', ' ').title())})\n"
+                    # All parts escaped for MarkdownV2: /matchX, team names, stage name, and parentheses
+                    reply += (
+                        f"/{escape_markdown_v2(f'match{idx}')} → " 
+                        f"{escape_markdown_v2(p1.get('team', 'Unknown Player'))} vs "
+                        f"{escape_markdown_v2(p2.get('team', 'Unknown Player'))} "
+                        f"\\({escape_markdown_v2(current_stage.replace('_', ' ').title())}\\)\n"
+                    )
                     idx += 1
-
-    if not current_admin_matches:
-        reply = "✅ All matches for the current round/stage are completed."
+    
+    # --- Provide feedback if no matches found ---
+    if idx == 1: 
+        # All messages are now fully escaped for MarkdownV2
+        reply = f"✅ All matches for the current {escape_markdown_v2(current_stage.replace('_', ' ').title())} are completed\\."
+        
         if current_stage == "group_stage":
-            reply += f"\nAdmin can now use /advance__group__round to proceed."
+            # Fixed typo "advance__group__round" to "advance_group_round" and escaped underscores
+            reply += f"\nAdmin can now use /{escape_markdown_v2('advance_group_round')} to proceed\\." 
         elif current_stage == "group_stage_completed":
-            reply += f"\nGroup stage is finished. Admin needs to draw knockout stages."
+            # Escaped period for MarkdownV2
+            reply += f"\nGroup stage is finished\\. Admin needs to draw knockout stages\\." 
 
-    reply += "\nTo add score: /match1 2-1"
-    await update.message.reply_text(reply, parse_mode='Markdown') # Use Markdown here
+    # --- Add score reporting instruction ---
+    # Escaped the example command and hyphen for MarkdownV2
+    reply += f"\n\nTo add score: /{escape_markdown_v2('match1')} 2\\-1" 
+
+    # --- Send the formatted reply with ParseMode.MARKDOWN_V2 ---
+    await update.message.reply_text(reply, parse_mode=ParseMode.MARKDOWN_V2)
+
 
 async def handle_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
