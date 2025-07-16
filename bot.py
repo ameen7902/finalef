@@ -791,7 +791,7 @@ async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not current_admin_matches:
         reply = "✅ All matches for the current round/stage are completed."
         if current_stage == "group_stage":
-            reply += f"\nAdmin can now use /advance_group_round to proceed."
+            reply += f"\nAdmin can now use /advance__group__round to proceed."
         elif current_stage == "group_stage_completed":
             reply += f"\nGroup stage is finished. Admin needs to draw knockout stages."
 
@@ -903,6 +903,7 @@ async def handle_group_score(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
 async def advance_group_round(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
+    ADMIN_ID="7366894756"
     if user_id != ADMIN_ID:
         await update.message.reply_text("❌ Only the admin can advance tournament rounds.")
         return
