@@ -1,2 +1,2 @@
-python-telegram-bot==20.8 # Or whatever version you prefer, e.g., 20.x.x
-firebase-admin==6.2.0 
+python-telegram-bot[webhooks]==20.8 # Or whatever version you are using, e.g., 20.x.x
+firebase-admin==6.2.0
