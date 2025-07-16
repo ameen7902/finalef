@@ -228,7 +228,7 @@ async def handle_team_selection(update: Update, context: ContextTypes.DEFAULT_TY
 
     await query.edit_message_text(f"✅ Team selected: {team_full_name}\n\nNow send your PES username:")
     return REGISTER_PES
-async def escape_markdown_v2(text: str) -> str:
+def escape_markdown_v2(text: str) -> str:
     """Helper function to escape special MarkdownV2 characters."""
     special_chars = r'_*[]()~`>#+-=|{}.!'
     for char in special_chars:
