@@ -13,7 +13,8 @@ from telegram.ext import (
     ContextTypes, ConversationHandler
 )
 # REMOVED: from flask import Flask, request, jsonify # No longer needed
-
+import re # Make sure this is at the top of your file
+from telegram.constants import ParseMode
 # Firebase Imports
 import firebase_admin
 from firebase_admin import credentials, db
@@ -227,7 +228,12 @@ async def handle_team_selection(update: Update, context: ContextTypes.DEFAULT_TY
 
     await query.edit_message_text(f"✅ Team selected: {team_full_name}\n\nNow send your PES username:")
     return REGISTER_PES
-
+async def escape_markdown_v2(text: str) -> str:
+    """Helper function to escape special MarkdownV2 characters."""
+    special_chars = r'_*[]()~`>#+-=|{}.!'
+    for char in special_chars:
+        text = text.replace(char, f'\\{char}')
+    return text
 async def receive_pes_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     pes_name = update.message.text.strip()
@@ -252,7 +258,11 @@ async def receive_pes_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     unlock_user()
 
     await context.bot.send_message(chat_id=user.id, text=f"✅ Registered!\n🏳️ Team: {team}\n🎮 PES: {pes_name}")
-    await context.bot.send_message(chat_id=GROUP_ID, text=f"✅ It's official! {user.first_name}, representing {team}, has successfully qualified for the FIFA WORLD CUP 2014!🏆⚽️")
+    await context.bot.send_message(
+    chat_id=GROUP_ID,
+    text=f"✅ It's official! @{escaped_user_display_name}, representing **{escaped_team_name}**, has successfully qualified for the FIFA WORLD CUP 2014!🏆⚽️",
+    parse_mode=ParseMode.MARKDOWN_V2
+)
 
     return ConversationHandler.END
 
