@@ -851,6 +851,10 @@ async def run_polling_mode_bot():
     print("--- Bot polling finished (should not be reached during normal operation) ---") # Debug print
 
 # Main entry point for the script
+# Assuming 'players' is intended to be a global variable holding your player data.
+# If it's not defined globally, you might need to initialize it here:
+players = {} # Or wherever you load your initial global state (e.g., players = load_state("players"))
+
 if __name__ == '__main__':
     print("--- Script execution started ---")
 
@@ -884,36 +888,56 @@ if __name__ == '__main__':
         # Build the Application instance, using post_init to set commands
         application = Application.builder().token(BOT_TOKEN).post_init(post_init_setup).build()
         print("--- Telegram Application instance built ---")
+
+        # --- IMPORTANT: Ensure 'players' data is loaded/accessible here ---
+        # If 'players' is a global variable, and you load it from a file,
+        # you might need to explicitly load it here if it's not already.
+        # Example (uncomment if load_state sets a global 'players' variable):
+        global players # Declare 'players' as global if you're modifying a global variable
+        players = load_state("players") # Make sure your load_state function is available and returns the players dict
+
+
+        # ================================================================
+        # --- PLACE THE DUMMY PLAYER GENERATION CODE BLOCK HERE ---
+        # ================================================================
+        # This code will now be correctly indented inside the 'try' block
+        # and after your application is built.
+
         if os.environ.get("TEST_MODE") == "true":
-    print("DEBUG: TEST_MODE is ON. Injecting dummy players for tournament simulation.")
+            print("DEBUG: TEST_MODE is ON. Injecting dummy players for tournament simulation.")
 
-    # Optional: Clear existing players if you want a fresh start with only dummy data
-    # DANGER: If you uncomment the line below and run it with your LIVE bot,
-    # it WILL WIPE OUT any actual registered players' data!
-    # players = {}
+            # Optional: Clear existing players if you want a fresh start with only dummy data
+            # DANGER: If you uncomment the line below and run it with your LIVE bot,
+            # it WILL WIPE OUT any actual registered players' data!
+            # players = {} # Uncomment with extreme caution for testing
 
-    # --- Generate 32 Dummy Players Using a Loop ---
-    num_dummy_players = 31 # Set the desired number of dummy players
-    for i in range(1, num_dummy_players + 1):
-        player_id = 1000 + i # Unique dummy user ID (e.g., 1001, 1002, ...)
-        player_name = f"Test Player {chr(64 + i)}" if i <= 26 else f"Test Player {i}" # A, B, C... or just numbers
-        username = f"tester_{player_id}"
-        team_name = f"Team {chr(64 + i)} FC" if i <= 26 else f"Team {i} FC" # Unique team names
-        pes_name = f"PES_User_{player_id}"
+            # --- Generate 32 Dummy Players Using a Loop ---
+            num_dummy_players = 31 # Set the desired number of dummy players
+            for i in range(1, num_dummy_players + 1):
+                player_id = 1000 + i # Unique dummy user ID (e.g., 1001, 1002, ...)
+                player_name = f"Test Player {chr(64 + i)}" if i <= 26 else f"Test Player {i}" # A, B, C... or just numbers
+                username = f"tester_{player_id}"
+                team_name = f"Team {chr(64 + i)} FC" if i <= 26 else f"Team {i} FC" # Unique team names
+                pes_name = f"PES_User_{player_id}"
 
-        players[str(player_id)] = {
-            "user_id": player_id,
-            "name": player_name,
-            "username": username,
-            "team": team_name,
-            "pes": pes_name,
-            "group": None, # Will be filled by create_groups
-            "stats": {"wins": 0, "draws": 0, "losses": 0, "gf": 0, "ga": 0, "points": 0, "gd": 0}
-        }
-    print(f"DEBUG: {num_dummy_players} dummy players injected.")
+                players[str(player_id)] = {
+                    "user_id": player_id,
+                    "name": player_name,
+                    "username": username,
+                    "team": team_name,
+                    "pes": pes_name,
+                    "group": None, # Will be filled by create_groups
+                    "stats": {"wins": 0, "draws": 0, "losses": 0, "gf": 0, "ga": 0, "points": 0, "gd": 0}
+                }
+            print(f"DEBUG: {num_dummy_players} dummy players injected.")
 
-    save_state("players", players) # This line saves the dummy players to your state file
-    print("DEBUG: Dummy players saved to state.")
+            save_state("players", players) # This line saves the dummy players to your state file
+            print("DEBUG: Dummy players saved to state.")
+
+        # ================================================================
+        # --- END OF DUMMY PLAYER GENERATION CODE ---
+        # ================================================================
+
         # Set up all synchronous handlers and other configuration
         print("--- Setting up bot handlers ---")
         setup_bot_handlers_sync(application)
@@ -936,4 +960,3 @@ if __name__ == '__main__':
         sys.exit(1)
 
     print("--- End of script execution path ---")
-
