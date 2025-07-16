@@ -20,7 +20,7 @@ from telegram.constants import ParseMode
 # Firebase Imports
 import firebase_admin
 from firebase_admin import credentials, db
-
+current_admin_matches = {} # Dictionary to store matches accessible by /matchX commands
 # === CONFIG ===
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 GROUP_ID = int(os.environ.get("GROUP_ID", -1002835703789)) # Default a placeholder ID
@@ -681,8 +681,53 @@ async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 current_admin_matches = {}
+# --- Helper function to update player statistics after a match ---
+# This assumes the score for a match is reported only once.
+# Recalculating stats for overridden scores would require more complex logic.
+def update_player_stats(players_data, player_id, opponent_id, player_score, opponent_score):
+    # Ensure 'stats' dictionary exists for the player reporting
+    if 'stats' not in players_data.get(player_id, {}):
+        players_data[player_id]['stats'] = {'wins': 0, 'losses': 0, 'draws': 0, 'points': 0, 'gf': 0, 'ga': 0, 'gd': 0}
 
+    # Ensure 'stats' dictionary exists for the opponent
+    if 'stats' not in players_data.get(opponent_id, {}):
+        players_data[opponent_id]['stats'] = {'wins': 0, 'losses': 0, 'draws': 0, 'points': 0, 'gf': 0, 'ga': 0, 'gd': 0}
+
+    # Get current stats objects for easier modification
+    player_stats = players_data[player_id]['stats']
+    opponent_stats = players_data[opponent_id]['stats']
+
+    # Update Goals For (GF) and Goals Against (GA) for both players
+    player_stats['gf'] += player_score
+    player_stats['ga'] += opponent_score
+    opponent_stats['gf'] += opponent_score
+    opponent_stats['ga'] += player_score
+
+    # Update Goal Difference (GD) for both players
+    player_stats['gd'] = player_stats['gf'] - player_stats['ga']
+    opponent_stats['gd'] = opponent_stats['gf'] - opponent_stats['ga']
+
+    # Update Wins, Losses, Draws, and Points for both players
+    if player_score > opponent_score:
+        # Player wins
+        player_stats['wins'] += 1
+        player_stats['points'] += 3
+        opponent_stats['losses'] += 1
+    elif player_score < opponent_score:
+        # Opponent wins
+        player_stats['losses'] += 1
+        opponent_stats['wins'] += 1
+        opponent_stats['points'] += 3
+    else: # Draw
+        # Both players draw
+        player_stats['draws'] += 1
+        player_stats['points'] += 1
+        opponent_stats['draws'] += 1
+        opponent_stats['points'] += 1
+
+    # No need to explicitly save_state here, as the caller will save it once updates are complete.
 async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global current_admin_matches # Declare global scope for modification
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized.")
         return
@@ -691,42 +736,67 @@ async def addscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     players_data = load_state("players")
     tournament_state = load_state("tournament_state")
     current_stage = tournament_state.get("stage")
+    current_group_round = tournament_state.get("group_match_round", 0) # Get current round
 
     if not fixtures_data or not current_stage:
         await update.message.reply_text("❌ No matches currently scheduled.")
         return
 
     reply = f"📋 Matches for {current_stage.replace('_', ' ').title()}:\n\n"
-    current_admin_matches.clear()
+    current_admin_matches.clear() # Clear previous matches
     idx = 1
 
     if current_stage == "group_stage":
+        # Admin /addscore should list only matches for the current active round
+        # This makes it easier for admin to manage round by round.
         for group_name, matches in fixtures_data.get("group_stage", {}).items():
             for match in matches:
-                p1_id, p2_id, score1, score2 = match
-                if score1 is None:
+                # Ensure match has enough elements (5 for round_number) and belongs to current round
+                if not isinstance(match, list) or len(match) < 5 or match[4] != current_group_round:
+                    continue # Skip malformed or non-current-round matches
+
+                p1_id, p2_id, score1, score2, round_num = match # Unpack 5 elements
+
+                if score1 is None: # Only list pending matches
                     p1 = players_data.get(p1_id)
                     p2 = players_data.get(p2_id)
                     if p1 and p2:
-                        current_admin_matches[f"match{idx}"] = {"type": "group", "group": group_name, "p1_id": p1_id, "p2_id": p2_id}
-                        reply += f"/match{idx} → {p1['team']} vs {p2['team']} ({group_name})\n"
+                        current_admin_matches[f"match{idx}"] = {
+                            "type": "group",
+                            "group": group_name,
+                            "p1_id": p1_id,
+                            "p2_id": p2_id,
+                            "round_num": round_num # Store the round number
+                        }
+                        # Apply escape_markdown_v2 to team names and group name
+                        reply += f"/match{idx} → {escape_markdown_v2(p1['team'])} vs {escape_markdown_v2(p2['team'])} (Group {escape_markdown_v2(group_name)} - Round {round_num + 1})\n"
                         idx += 1
     elif current_stage in ["round_of_16", "quarter_finals", "semi_finals", "final"]:
+        # Knockout matches still only have 4 elements [p1_id, p2_id, score1, score2]
         for match in fixtures_data.get(current_stage, []):
-            p1_id, p2_id, score1, score2 = match
+            # Ensure match has enough elements (4 for knockout)
+            if not isinstance(match, list) or len(match) < 4:
+                continue # Skip malformed matches
+
+            p1_id, p2_id, score1, score2 = match[:4] # Unpack up to 4 elements
             if score1 is None:
                 p1 = players_data.get(p1_id)
                 p2 = players_data.get(p2_id)
                 if p1 and p2:
                     current_admin_matches[f"match{idx}"] = {"type": "knockout", "stage": current_stage, "p1_id": p1_id, "p2_id": p2_id}
-                    reply += f"/match{idx} → {p1['team']} vs {p2['team']} ({current_stage.replace('_', ' ').title()})\n"
+                    # Apply escape_markdown_v2 to team names and stage name
+                    reply += f"/match{idx} → {escape_markdown_v2(p1['team'])} vs {escape_markdown_v2(p2['team'])} ({escape_markdown_v2(current_stage.replace('_', ' ').title())})\n"
                     idx += 1
 
     if not current_admin_matches:
-        reply = "✅ All matches for this stage are completed. Use /start_tournament (if admin) to advance or /addscore later for next stage."
+        reply = "✅ All matches for the current round/stage are completed."
+        if current_stage == "group_stage":
+            reply += f"\nAdmin can now use /advance_group_round to proceed."
+        elif current_stage == "group_stage_completed":
+            reply += f"\nGroup stage is finished. Admin needs to draw knockout stages."
 
     reply += "\nTo add score: /match1 2-1"
-    await update.message.reply_text(reply)
+    await update.message.reply_text(reply, parse_mode='Markdown') # Use Markdown here
 
 async def handle_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -757,7 +827,11 @@ async def handle_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
         p2_id = match_info["p2_id"]
 
         if match_type == "group":
-            await handle_group_score(update, context, match_info["group"], p1_id, p2_id, score1, score2)
+            round_num = match_info.get("round_num") # Get round_num for group matches
+            if round_num is None: # Should not happen if addscore is updated correctly
+                await update.message.reply_text("❌ Error: Group match information is missing round number.")
+                return
+            await handle_group_score(update, context, match_info["group"], p1_id, p2_id, score1, score2, round_num) # Pass round_num
         elif match_type == "knockout":
             await handle_knockout_score(update, context, match_info["stage"], p1_id, p2_id, score1, score2)
 
@@ -771,75 +845,61 @@ async def handle_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ An unexpected error occurred.")
 
 
-async def handle_group_score(update: Update, context: ContextTypes.DEFAULT_TYPE, group_name: str, p1_id: str, p2_id: str, score1: int, score2: int):
+async def handle_group_score(update: Update, context: ContextTypes.DEFAULT_TYPE, group_name: str, p1_id: str, p2_id: str, score1: int, score2: int, round_num: int): # NEW: Added round_num parameter
     fixtures_data = load_state("fixtures")
     players = load_state("players")
 
     group_matches = fixtures_data["group_stage"][group_name]
     match_found = False
+
     for i, match in enumerate(group_matches):
-        if (match[0] == p1_id and match[1] == p2_id):
-            group_matches[i] = [p1_id, p2_id, score1, score2]
+        # Check if this is the correct match and belongs to the specified round
+        if (match[0] == p1_id and match[1] == p2_id and match[4] == round_num):
+            # Preserve round_num when updating
+            group_matches[i] = [p1_id, p2_id, score1, score2, round_num]
             match_found = True
             break
-        elif (match[0] == p2_id and match[1] == p1_id):
-            group_matches[i] = [p2_id, p1_id, score2, score1]
+        elif (match[0] == p2_id and match[1] == p1_id and match[4] == round_num):
+            # Preserve round_num when updating (and swap scores for canonical order if desired, or just store as reported)
+            # For consistency, it's better to store with p1_id as match[0] and p2_id as match[1]
+            # even if reported by p2, then the scores swap.
+            group_matches[i] = [p1_id, p2_id, score1, score2, round_num] # Correctly store in canonical order
             match_found = True
             break
 
     if not match_found:
-        await update.message.reply_text("❌ Error: Group match not found in fixtures.")
+        await update.message.reply_text("❌ Error: Group match not found or does not belong to the current round in fixtures.")
         return
 
-    player1_stats = players[p1_id]["stats"]
-    player2_stats = players[p2_id]["stats"]
-
-    player1_stats["gf"] += score1
-    player1_stats["ga"] += score2
-    player1_stats["gd"] = player1_stats["gf"] - player1_stats["ga"]
-
-    player2_stats["gf"] += score2
-    player2_stats["ga"] += score1
-    player2_stats["gd"] = player2_stats["gf"] - player2_stats["ga"]
-
-    if score1 > score2:
-        player1_stats["wins"] += 1
-        player1_stats["points"] += 3
-        player2_stats["losses"] += 1
-        winner_name = players[p1_id]['team']
-    elif score2 > score1:
-        player2_stats["wins"] += 1
-        player2_stats["points"] += 3
-        player1_stats["losses"] += 1
-        winner_name = players[p2_id]['team']
-    else:
-        player1_stats["draws"] += 1
-        player1_stats["points"] += 1
-        player2_stats["draws"] += 1
-        player2_stats["points"] += 1
-        winner_name = "Draw"
-
-    players[p1_id]["stats"] = player1_stats
-    players[p2_id]["stats"] = player2_2stats
+    # Use the helper function to update player statistics
+    update_player_stats(players, p1_id, p2_id, score1, score2) # p1_id and p2_id are fixed for the match
 
     save_state("fixtures", fixtures_data)
     save_state("players", players)
 
-    await update.message.reply_text(f"✅ Score {score1}-{score2} recorded for {players[p1_id]['team']} vs {players[p2_id]['team']}. Winner: {winner_name}.")
-    await context.bot.send_message(GROUP_ID, f"⚽️ *Group Match Result:* {players[p1_id]['team']} {score1} - {score2} {players[p2_id]['team']}\n_Check /standings for updates._", parse_mode='Markdown')
+    # Use escape_markdown_v2 for team names in replies
+    p1_team_name = players.get(p1_id, {}).get('team', 'Unknown Player')
+    p2_team_name = players.get(p2_id, {}).get('team', 'Unknown Player')
 
-    all_group_matches_completed = True
-    for group_matches_list in fixtures_data["group_stage"].values():
-        for match in group_matches_list:
-            if match[2] is None:
-                all_group_matches_completed = False
-                break
-        if not all_group_matches_completed:
-            break
+    if score1 > score2:
+        winner_name = escape_markdown_v2(p1_team_name)
+    elif score2 > score1:
+        winner_name = escape_markdown_v2(p2_team_name)
+    else:
+        winner_name = "Draw"
 
-    if all_group_matches_completed:
-        await context.bot.send_message(ADMIN_ID, "All group stage matches completed! Initiating knockout stage.")
-        await advance_to_knockout(context)
+    await update.message.reply_text(
+        f"✅ Score {score1}-{score2} recorded for {escape_markdown_v2(p1_team_name)} vs {escape_markdown_v2(p2_team_name)}. Winner: {winner_name}.",
+        parse_mode='Markdown' # Ensure parse_mode is set
+    )
+    await context.bot.send_message(
+        GROUP_ID,
+        f"⚽️ *Group Match Result (Round {round_num + 1}):* {escape_markdown_v2(p1_team_name)} {score1} - {score2} {escape_markdown_v2(p2_team_name)}\n_Check /standings for updates._",
+        parse_mode='Markdown'
+    )
+
+    # The logic to check if all matches are completed and advance to knockout
+    # is now handled by the /advance_group_round command, NOT here.
 
 
 async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
