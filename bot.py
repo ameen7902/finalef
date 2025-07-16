@@ -409,8 +409,12 @@ async def make_group_fixtures(context: ContextTypes.DEFAULT_TYPE, groups: dict):
 
     await context.bot.send_message(GROUP_ID, "🔢 Group fixtures generated! Use /fixtures to see your match schedule.")
 
+import json # Ensure this is at the top of your bot.py file for any debugging prints
+
 async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
+    print(f"DEBUG: Fixtures command received from user_id: {user_id}")
+
     players = load_state("players")
     fixtures_data = load_state("fixtures")
     tournament_state = load_state("tournament_state")
@@ -418,54 +422,110 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_id not in players:
         await update.message.reply_text("❌ You are not registered for the tournament. Use /register.")
+        print(f"DEBUG: User {user_id} not in players. Players count: {len(players)}")
         return
 
     player_info = players[user_id]
+    print(f"DEBUG: Player info for {user_id}: {player_info}")
     reply_text = ""
     found_fixture = False
 
     if current_stage == "group_stage":
         player_group = player_info.get("group")
+        print(f"DEBUG: User {user_id}'s group: {player_group}")
+
         if not player_group or player_group not in fixtures_data.get("group_stage", {}):
             await update.message.reply_text("❌ Your group fixtures are not yet available.")
+            print(f"DEBUG: Group '{player_group}' not found in fixtures_data group_stage. Available groups: {fixtures_data.get('group_stage', {}).keys()}")
+            print(f"DEBUG: Full group_stage data: {json.dumps(fixtures_data.get('group_stage', {}), indent=2)}")
             return
 
         reply_text += f"📅 Your Group Matches - {player_info['team']} ({player_info['group'] or 'No Group'})\n\n"
         group_matches = fixtures_data["group_stage"][player_group]
-        for match in group_matches:
+        print(f"DEBUG: Group '{player_group}' matches loaded: {json.dumps(group_matches, indent=2)}")
+
+        if not group_matches:
+            print(f"DEBUG: Group '{player_group}' has no matches listed, despite existing in fixtures_data.")
+
+        for match_index, match in enumerate(group_matches):
+            # === MODIFIED DEFENSIVE CHECK FOR match[2] and match[3] ===
+            # Ensure 'match' is a list and has at least 2 elements for player IDs
+            if not isinstance(match, list) or len(match) < 2:
+                print(f"WARNING: Malformed match data (too short) in Firebase for Group {player_group}, Match index {match_index}: {match}")
+                continue # Skip to the next match
+
+            print(f"DEBUG: Processing match {match_index}: {match}")
             if user_id in match[0:2]:
                 opponent_id = match[1] if match[0] == user_id else match[0]
+                print(f"DEBUG: Found user {user_id} in match {match_index}. Opponent ID: {opponent_id}")
                 opponent_info = players.get(opponent_id)
+                print(f"DEBUG: Opponent info for {opponent_id}: {opponent_info}")
+
                 if opponent_info:
-                    score_status = f"({match[2]}-{match[3]})" if match[2] is not None and match[3] is not None else "(Pending)"
-                    reply_text += f"{player_info['team']} vs {opponent_info['team']} {score_status}\n🎮 Opponent: @{opponent_info['username']}\n"
+                    # Check if match has score placeholders before accessing them
+                    if len(match) >= 4 and match[2] is not None and match[3] is not None:
+                        score_status = f"({match[2]}-{match[3]})"
+                    else:
+                        score_status = "(Pending)"
+
+                    reply_text += (
+                        f"{player_info['team']} vs {opponent_info['team']} {score_status}\n"
+                        f"🎮 Opponent: @{opponent_info['username']}\n"
+                    )
                     found_fixture = True
+                    print(f"DEBUG: Fixture found and added to reply for {user_id}. Match: {match}")
+                else:
+                    print(f"DEBUG: Opponent {opponent_id} not found in 'players' data.")
+            else:
+                print(f"DEBUG: User {user_id} not in match {match_index}'s player IDs ({match[0]}, {match[1]}).")
+
 
     elif current_stage in ["round_of_16", "quarter_finals", "semi_finals", "final"]:
         knockout_matches = fixtures_data.get(current_stage, [])
         if not knockout_matches:
             await update.message.reply_text("❌ Knockout matches for this stage are not yet drawn.")
+            print(f"DEBUG: No knockout matches for stage {current_stage}.")
             return
 
         reply_text += f"📅 Your Knockout Match - {player_info['team']}\n\n"
-        for match in knockout_matches:
+        for match_index, match in enumerate(knockout_matches):
+            # === MODIFIED DEFENSIVE CHECK FOR match[2] and match[3] ===
+            if not isinstance(match, list) or len(match) < 2:
+                print(f"WARNING: Malformed match data (too short) in Firebase for stage {current_stage}, Match index {match_index}: {match}")
+                continue
+
+            print(f"DEBUG: Processing knockout match {match_index}: {match}")
             if user_id == match[0] or user_id == match[1]:
                 opponent_id = match[1] if match[0] == user_id else match[0]
                 opponent_info = players.get(opponent_id)
+                print(f"DEBUG: Opponent info for {opponent_id}: {opponent_info}")
+
                 if opponent_info:
-                    score_status = f"({match[2]}-{match[3]})" if match[2] is not None and match[3] is not None else "(Pending)"
+                    # Check if match has score placeholders before accessing them
+                    if len(match) >= 4 and match[2] is not None and match[3] is not None:
+                        score_status = f"({match[2]}-{match[3]})"
+                    else:
+                        score_status = "(Pending)"
+
                     reply_text += (
                         f"*{current_stage.replace('_', ' ').title()}:*\n"
                         f"{player_info['team']} vs {opponent_info['team']} {score_status}\n"
                         f"🎮 Opponent: @{opponent_info['username']}\n"
                     )
                     found_fixture = True
+                    print(f"DEBUG: Fixture found and added to reply for {user_id}.")
+                else:
+                    print(f"DEBUG: Opponent {opponent_id} not found in 'players' data for knockout match.")
                 break
+            else:
+                print(f"DEBUG: User {user_id} not in knockout match {match_index}'s player IDs ({match[0]}, {match[1]}).")
 
     if found_fixture:
         await update.message.reply_text(reply_text, parse_mode='Markdown')
+        print(f"DEBUG: Sent fixture reply for {user_id}. Reply length: {len(reply_text)} characters.")
     else:
         await update.message.reply_text("❌ No upcoming match found for you or your matches are already completed for this stage.")
+        print(f"DEBUG: No fixture found for {user_id}. 'found_fixture' remained False.")
 async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     players = load_state("players")
     groups_data = load_state("groups")
