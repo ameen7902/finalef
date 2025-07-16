@@ -252,7 +252,7 @@ async def receive_pes_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     unlock_user()
 
     await context.bot.send_message(chat_id=user.id, text=f"✅ Registered!\n🏳️ Team: {team}\n🎮 PES: {pes_name}")
-    await context.bot.send_message(chat_id=GROUP_ID, text=f"✅ @{user.username or user.first_name} registered as {team}")
+    await context.bot.send_message(chat_id=-1002643663109, text=f"✅ @{user.username or user.first_name} registered as {team}")
 
     return ConversationHandler.END
 
