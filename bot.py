@@ -846,7 +846,7 @@ if __name__ == '__main__':
 
         print("--- Building Telegram Application instance ---")
         # Build the Application instance (synchronous)
-        global application # Declare intent to use global
+      
         application = Application.builder().token(BOT_TOKEN).build()
         print("--- Telegram Application instance built ---")
 
