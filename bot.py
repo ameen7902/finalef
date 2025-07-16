@@ -244,7 +244,8 @@ async def receive_pes_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Something went wrong. Try /register again.")
         unlock_user()
         return ConversationHandler.END
-
+    escaped_user_display_name = escape_markdown_v2(user.username)
+    escaped_team_name = escape_markdown_v2(team)
     players[str(user.id)] = {
         "name": user.first_name,
         "username": user.username or "NoUsername",
