@@ -893,7 +893,7 @@ if __name__ == '__main__':
         # If 'players' is a global variable, and you load it from a file,
         # you might need to explicitly load it here if it's not already.
         # Example (uncomment if load_state sets a global 'players' variable):
-        global players # Declare 'players' as global if you're modifying a global variable
+        
         players = load_state("players") # Make sure your load_state function is available and returns the players dict
 
 
