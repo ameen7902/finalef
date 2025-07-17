@@ -224,11 +224,17 @@ async def addrule(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE): 
     user = update.effective_user 
-
+    MAX_PLAYERS = 32 # You can change 32 to your desired maximum number of players
     if update.effective_chat.type not in ["group", "supergroup"]: 
         await update.message.reply_text("❌ Please use /register in the tournament group.") 
         return 
-
+    # Check if the maximum number of players has been reached
+    if len(players) >= MAX_PLAYERS:
+        await update.message.reply_text(
+            f"❌ Registration is now closed\! The tournament has reached its maximum of *{MAX_PLAYERS}* players\.",
+            parse_mode=ParseMode.MARKDOWN_V2 # Make sure ParseMode is imported from telegram.constants
+        )
+        return
     if is_locked(): 
         await update.message.reply_text("⚠️ Another player is registering. Please try again in a few minutes.") 
         return 
