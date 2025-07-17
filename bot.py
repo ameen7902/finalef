@@ -463,7 +463,7 @@ async def _perform_live_group_drawing(context, players_data, allocated_groups):
 
     initial_drawing_message = (
         "✨ FIFA Tournament Live Drawing in progress\.\.\. ✨\n\n"
-        "Get ready for the exciting group reveals! Each team's destiny will be announced shortly\\. Stay tuned\\!"
+        "Get ready for the exciting group reveals\! Each team's destiny will be announced shortly\\. Stay tuned\\!"
     )
     
     # Send initial message to the public group chat
