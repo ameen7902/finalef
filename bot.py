@@ -49,7 +49,7 @@ TEAM_LIST = [
 
 # Conversation state for PES name entry
 REGISTER_PES = 1
-ddef escape_markdown_v2(text: str) -> str:
+def escape_markdown_v2(text: str) -> str:
     """Helper function to escape markdown v2 special characters."""
     print(f"DEBUG: escape_markdown_v2 - Input: '{text}'") # Add this line
     escape_chars = r'_*[]()~`>#+-=|{}.!'
