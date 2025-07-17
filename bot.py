@@ -782,7 +782,7 @@ async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Header is now simpler or removed, as strict columns are hard without monospace
         # If you still want a header, it's best as general text, not attempting strict alignment.
         group_text += "`Team` \| `P` \| `W` \| `D` \| `L` \| `GD` \| `GF` \| `Pts`\n" # A simplified, non-aligned header for clarity
-        group_text += "----------------------------------------------\n" # Separator
+        group_text += "\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\n" # Separator
 
         for team_stat in standings:
             # Format each line concisely
