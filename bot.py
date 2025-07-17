@@ -478,7 +478,7 @@ async def _perform_live_group_drawing(context, players_data, allocated_groups):
             f"Team *{escape_markdown_v2(team_name)}* \\(@{escape_markdown_v2(username)}\\) "
             f"has been officially allotted to *{escape_markdown_v2(assigned_group)}*\\!" # This ! is correctly escaped
         )
-        
+        print(f"DEBUG: Sending announcement for {team_name} to Telegram: '{announcement_text}'")
         await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=announcement_text,
