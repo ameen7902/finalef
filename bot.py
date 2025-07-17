@@ -398,7 +398,7 @@ async def start_tournament(update, context):
     final_message_for_admin = "✅ Group drawing complete and fixtures generated\! Tournament is officially in the Group Stage\!"
     await update.message.reply_text(final_message_for_admin, parse_mode=ParseMode.MARKDOWN_V2)
     
-    Send a general announcement to the group chat (if you have one)
+    # Send a general announcement to the group chat (if you have one)
     if 'GROUP_ID' in globals() and GROUP_ID:
         await context.bot.send_message(
             GROUP_ID,
