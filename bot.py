@@ -761,17 +761,12 @@ async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if player_info:
                 stats = player_info.get("stats", {})
                 team_name = player_info.get('team', 'N/A')
-                team_name_escaped = escape_markdown_v2(team_name)
+                team_name_escaped = escape_markdown_v2(team_name) 
                 
-                # Update max_team_name_len
-                # Note: len(team_name_escaped) gives length of escaped string which can be > actual characters
-                # If your escape_markdown_v2 adds backslashes, you need to consider the visual length.
-                # A simple len(team_name) is usually sufficient for spacing calculations,
-                # as Telegram handles the display.
                 max_team_name_len = max(max_team_name_len, len(team_name)) 
 
                 standings.append({
-                    "team_name_raw": team_name, # Keep raw for length calculation
+                    "team_name_raw": team_name, 
                     "team_escaped": team_name_escaped,
                     "points": stats.get("points", 0),
                     "wins": stats.get("wins", 0),
@@ -779,33 +774,31 @@ async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "losses": stats.get("losses", 0)
                 })
 
-        # Sort the standings
         standings.sort(key=lambda x: (x['points'], x['wins'], x['draws']), reverse=True)
 
-        # Set column widths. Add a small buffer to team name length.
-        team_col_width = max_team_name_len + 2 # Add 2 for a small buffer
-        stat_col_width = 3 # For W, D, L, Pts (accommodates up to 999)
+        team_col_width = max_team_name_len + 2 
+        stat_col_width = 1 # *** CHANGED TO 1 ***
 
-        # Build group text with monospace formatting
         group_text = f"📊 *{escape_markdown_v2(group_name.upper())} Standings:*\n"
         group_text += "```\n" # Start monospace block
 
-        # Header for the table - dynamically padded
+        # Header for the table - using single letters for compactness
         header_team = "Team".ljust(team_col_width)
-        header_wins = "W".center(stat_col_width)
-        header_draws = "D".center(stat_col_width)
-        header_losses = "L".center(stat_col_width)
-        header_pts = "Pts".center(stat_col_width)
+        header_wins = "W".ljust(stat_col_width)
+        header_draws = "D".ljust(stat_col_width)
+        header_losses = "L".ljust(stat_col_width)
+        header_pts = "P".ljust(stat_col_width) # Using 'P' for Points
         
         group_text += f"{header_team} | {header_wins} | {header_draws} | {header_losses} | {header_pts}\n"
         
-        # Separator line - also dynamically sized
-        total_width = team_col_width + (stat_col_width + 3) * 4 # +3 for " | "
-        group_text += "-" * total_width + "\n"
+        # Separator line - dynamically sized
+        # total_width = team_col_width + (stat_col_width + 3) * 4  # Adjusted formula for better fit
+        total_width = team_col_width + (stat_col_width + 3) * 3 + stat_col_width # 3 for " | ", last stat_col_width for the last column
+        group_text += "-" * (total_width + 1) + "\n" # Adding +1 for aesthetics and robustness
 
         for team_stat in standings:
-            # Pad each field for alignment within the monospace block
-            team_display = team_stat['team_name_raw'].ljust(team_col_width) # Use raw name for padding
+            team_display = team_stat['team_name_raw'].ljust(team_col_width) 
+            # Use rjust(stat_col_width) which is 1
             wins_display = str(team_stat['wins']).rjust(stat_col_width)
             draws_display = str(team_stat['draws']).rjust(stat_col_width)
             losses_display = str(team_stat['losses']).rjust(stat_col_width)
