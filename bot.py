@@ -655,12 +655,29 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # This case should ideally not be reached if the logic above is sound
         # but as a safeguard, if reply_text is somehow still empty
         await update.message.reply_text("No fixtures to display at this moment\.", parse_mode=ParseMode.MARKDOWN_V2)
+
+
 async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Load tournament state to check the current stage
+    tournament_state = load_state("tournament_state")
+    current_stage = tournament_state.get("stage", "registration")
+
+    # --- NEW LOGIC TO DISABLE DURING KNOCKOUT STAGES ---
+    if current_stage in ["round_of_16", "quarter_finals", "semi_finals", "final"]:
+        await update.message.reply_text(
+            "🚫 The tournament has moved to the knockout stage\\. Group standings are no longer available\\.\n"
+            "Use /fixtures to see *your* upcoming match, or */showknockout* to see all matches for the current stage\\.",
+            parse_mode=ParseMode.MARKDOWN_V2 # Ensure ParseMode.MARKDOWN_V2 is used here for escaping
+        )
+        print(f"DEBUG: Group standings command blocked because tournament is in {current_stage}.")
+        return
+    # --- END OF NEW LOGIC ---
+
     players = load_state("players")
-    groups_data = load_state("groups")
+    groups_data = load_state("groups") # This holds player_ids grouped by group_name
 
     if not groups_data:
-        await update.message.reply_text("❌ Groups have not been formed yet.")
+        await update.message.reply_text("❌ Groups have not been formed yet.", parse_mode=ParseMode.MARKDOWN_V2) # Added parse_mode for consistency
         return
 
     all_standings = ""
@@ -672,7 +689,7 @@ async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if player_info:
                 stats = player_info.get("stats", {})
                 standings.append({
-                    "team": player_info['team'],
+                    "team": player_info.get('team', 'N/A'), # Use .get with default for safety
                     "points": stats.get("points", 0),
                     "gd": stats.get("gd", 0),
                     "gf": stats.get("gf", 0),
@@ -683,28 +700,35 @@ async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         standings.sort(key=lambda x: (x['points'], x['gd'], x['gf']), reverse=True)
 
-        group_text = f"📊 *{group_name} Standings:*\n"
-        group_text += "Team        | Pts | GD | GF | W-D-L\n"
-        group_text += "--------------------------------------\n"
+        # Using f-strings and escape_markdown_v2 for consistent formatting
+        # Note: Your original format `Team | Pts | ...` might need careful escaping for `|` and ` `
+        # For simplicity, I'm just escaping the group name here.
+        group_text = f"📊 *{escape_markdown_v2(group_name.upper())} Standings:*\n"
+        group_text += "`Team        | Pts | GD | GF | W-D-L`\n" # Using backticks for table header for easier MarkdownV2
+        group_text += "`--------------------------------------`\n" # Using backticks for separator
+
         for team_stat in standings:
-            team_display = (team_stat['team'] + "          ")[:10]
+            team_display = (team_stat['team'] + "          ")[:10] # Pad and truncate
+            escaped_team_display = escape_markdown_v2(team_display) # Escape the padded/truncated team name
+
             group_text += (
-                f"{team_display} | {team_stat['points']:<3} | {team_stat['gd']:<2} | {team_stat['gf']:<2} | "
-                f"{team_stat['wins']}-{team_stat['draws']}-{team_stat['losses']}\n"
+                f"`{escaped_team_display:<10} | {team_stat['points']:<3} | {team_stat['gd']:<2} | {team_stat['gf']:<2} | "
+                f"{team_stat['wins']}-{team_stat['draws']}-{team_stat['losses']}`\n"
             )
         group_text += "\n"
         all_standings += group_text
 
     if all_standings:
-        await update.message.reply_text(all_standings, parse_mode='Markdown')
+        # Use ParseMode.MARKDOWN_V2 for consistency and safety with escaped strings
+        await update.message.reply_text(all_standings, parse_mode=ParseMode.MARKDOWN_V2)
     else:
-        await update.message.reply_text("❌ No standings available yet.")
+        await update.message.reply_text("❌ No standings available yet.", parse_mode=ParseMode.MARKDOWN_V2)
 
 
-current_admin_matches = {}
-# --- Helper function to update player statistics after a match ---
+# current_admin_matches = {} # Keep this if it's a global variable needed elsewhere
+# --- Helper function to update player statistics after a match --- # Keep this comment if relevant
 # This assumes the score for a match is reported only once.
-# Recalculating stats for overridden scores would require more complex logic.
+# Recalculating stats for overridden scores would require more complex logic. # Keep this comment if relevant
 def update_player_stats(players_data, player_id, opponent_id, player_score, opponent_score):
     # Ensure 'stats' dictionary exists for the player reporting
     if 'stats' not in players_data.get(player_id, {}):
