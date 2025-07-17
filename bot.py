@@ -1110,6 +1110,7 @@ async def handle_group_score(update: Update, context: ContextTypes.DEFAULT_TYPE,
 async def advance_group_round(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     ADMIN_ID="7366894756"
+    GROUP_ID="-1002835703789"
     if user_id != ADMIN_ID:
         await update.message.reply_text("❌ Only the admin can advance tournament rounds.")
         return
@@ -1455,14 +1456,14 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
     # --- Send Confirmation Messages (Beautified) ---
     # Confirmation for the admin
     await update.message.reply_text(
-        f"🎉 *Match Result Recorded!* Score {score1}-{score2} for {winner_team_escaped} vs {loser_team_escaped}\\. "
+        f"🎉 *Match Result Recorded\!* Score {score1}-{score2} for {winner_team_escaped} vs {loser_team_escaped}\\. "
         f"*{winner_team_escaped}* advances\\! @{winner_username_escaped}",
         parse_mode=ParseMode.MARKDOWN_V2
     )
     # Announcement to the main group
     await context.bot.send_message(
         GROUP_ID,
-        f"🏆 *KNOCKOUT BATTLE!* \\- *{stage_title_escaped}*\n" # Escaped hyphen
+        f"🏆 *KNOCKOUT BATTLE\!* \\- *{stage_title_escaped}*\n" # Escaped hyphen
         f"*{winner_team_escaped}* {score1} \\- {score2} *{loser_team_escaped}*\n" # Escaped hyphen
         f"🌟 *{winner_team_escaped}* advances to the next round\\! @{winner_username_escaped}", # Escaped exclamation mark
         parse_mode=ParseMode.MARKDOWN_V2
@@ -1497,7 +1498,7 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
 
             await context.bot.send_message(
                 GROUP_ID, 
-                f"👑 *A NEW CHAMPION IS CROWNED!* 👑\n"
+                f"👑 *A NEW CHAMPION IS CROWNED\!* 👑\n"
                 f"🎉 The tournament has concluded and the winner is *{final_winner_team_escaped}* (@{final_winner_username_escaped})\\!\n"
                 f"Congratulations to the champion and thank you to all participants\\! 🙏", # Escaped exclamation mark
                 parse_mode=ParseMode.MARKDOWN_V2
