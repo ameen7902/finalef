@@ -195,6 +195,16 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Registration is closed. The tournament has already started.")
         return
 
+    # --- NEW CHECK: User must have a username ---
+    if not user.username:
+        await update.message.reply_text(
+            f"🚫 To participate in this tournament, you need to have a Telegram username. "
+            f"Please go to your Telegram *Settings* -> *Edit Profile* -> *Username*, set one, and then try `/register` again.",
+            parse_mode=ParseMode.MARKDOWN_V2 # Use MarkdownV2 for bold text
+        )
+        return # Stop the registration process here if no username
+
+    # --- Rest of your existing code (only proceeds if user has a username) ---
     lock_user(user.id)
 
     try:
@@ -207,6 +217,7 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Error sending DM for registration: {e}")
         await update.message.reply_text("❌ Couldn't send DM. Please start the bot first: @e_tournament_bot")
+    finally: # Use finally to ensure unlock even if DM fails
         unlock_user()
 
 def build_team_buttons():
@@ -309,10 +320,8 @@ async def set_bot_commands(application_instance):
         BotCommand("rules", "Show tournament rules"),
         BotCommand("players", "List registered players"),
         # Admin Commands
-        BotCommand("addrule", "Admin: Add a rule"),
         BotCommand("start_tournament", "Admin: Start the group stage"),
         BotCommand("addscore", "Admin: Add match scores"),
-        BotCommand("reset_tournament", "Admin: Clear all tournament data"),
     ]
     await application_instance.bot.set_my_commands(commands)
     # print("Bot commands set.") # This print will now happen after the await
@@ -1463,9 +1472,9 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
     # Announcement to the main group
     await context.bot.send_message(
         GROUP_ID,
-        f"🏆 *KNOCKOUT BATTLE\!* \\- *{stage_title_escaped}*\n" # Escaped hyphen
+        f"🏆 *FIFA 2014 \!* \\- *{stage_title_escaped}*\n" # Escaped hyphen
         f"*{winner_team_escaped}* {score1} \\- {score2} *{loser_team_escaped}*\n" # Escaped hyphen
-        f"🌟 *{winner_team_escaped}* advances to the next round\\! @{winner_username_escaped}", # Escaped exclamation mark
+        f"🌟 *{winner_team_escaped}* advances to the *{stage_title_escaped}*\\! @{winner_username_escaped}", # Escaped exclamation mark
         parse_mode=ParseMode.MARKDOWN_V2
     )
     print(f"DEBUG: Score notification sent for {winner_team_escaped} vs {loser_team_escaped}.")
@@ -1499,7 +1508,7 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
             await context.bot.send_message(
                 GROUP_ID, 
                 f"👑 *A NEW CHAMPION IS CROWNED\!* 👑\n"
-                f"🎉 The tournament has concluded and the winner is *{final_winner_team_escaped}* (@{final_winner_username_escaped})\\!\n"
+                f"🎉 The tournament has concluded and the winner is *{final_winner_team_escaped}* \(@{final_winner_username_escaped}\)\\!\n"
                 f"Congratulations to the champion and thank you to all participants\\! 🙏", # Escaped exclamation mark
                 parse_mode=ParseMode.MARKDOWN_V2
             )
