@@ -1456,7 +1456,7 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
     # --- Send Confirmation Messages (Beautified) ---
     # Confirmation for the admin
     await update.message.reply_text(
-        f"🎉 *Match Result Recorded\!* Score {score1}-{score2} for {winner_team_escaped} vs {loser_team_escaped}\\. "
+        f"🎉 *Match Result Recorded\!* Score {score1}\-{score2} for {winner_team_escaped} vs {loser_team_escaped}\\. "
         f"*{winner_team_escaped}* advances\\! @{winner_username_escaped}",
         parse_mode=ParseMode.MARKDOWN_V2
     )
