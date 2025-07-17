@@ -1519,7 +1519,7 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
         next_stage_fixtures = []
         for i in range(0, len(winners_of_current_stage_ordered), 2):
             if i + 1 < len(winners_of_current_stage_ordered):
-                next_stage_fixtures.append([winners_of_current_stage_ordered[i], winners_of_current_stage_ordered[i+1], None, None])
+                next_stage_fixtures.append([winners_of_current_stage_ordered[i], winners_of_current_stage_ordered[i+1], None, None, None, 'pending'])
             else:
                 print(f"WARNING: Odd number of winners ({len(winners_of_current_stage_ordered)}) for {next_stage}. This indicates an issue in bracket generation or reporting.")
 
