@@ -1537,66 +1537,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
 
 # Assuming this function is called when a tiebreaker result is submitted
 # You might make this an admin-only command or part of a ConversationHandler
-async def submit_tiebreaker_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"DEBUG: Raw command args received: {context.args}")
-    print(f"DEBUG: Number of args received: {len(context.args)}")
-    
-    args = context.args
-    if not args or len(args) != 3:
-        await update.message.reply_text("Usage: /submit_tiebreaker_result <group_name> <winner_player_id> <loser_player_id>")
-        return
-
-    group_name = args[0]
-    winner_id = args[1]
-    loser_id = args[2]
-
-    fixtures_data = load_state("fixtures")
-    tournament_state = load_state("tournament_state")
-    players = load_state("players") # Load players to get team info
-    print(f"DEBUG: submit_tiebreaker_result called for group: {group_name}")
-    print(f"DEBUG: Current fixtures_data keys: {fixtures_data.keys()}")
-    if 'tiebreaker_fixtures' in fixtures_data:
-        print(f"DEBUG: Tiebreaker fixtures keys: {fixtures_data['tiebreaker_fixtures'].keys()}")
-
-    if 'tiebreaker_fixtures' not in fixtures_data or group_name not in fixtures_data['tiebreaker_fixtures']:
-        await update.message.reply_text(f"❌ No pending tiebreaker match found for {group_name}\.")
-        return
-    
-    tiebreaker_match = fixtures_data['tiebreaker_fixtures'][group_name]
-    tied_player1_id = tiebreaker_match[0]
-    tied_player2_id = tiebreaker_match[1]
-
-    # Validate that the submitted winner/loser are actually the tied players
-    if not ((winner_id == tied_player1_id and loser_id == tied_player2_id) or
-            (winner_id == tied_player2_id and loser_id == tied_player1_id)):
-        await update.message.reply_text("❌ Submitted winner/loser IDs do not match the tied players for this group\.")
-        return
-
-    # Update tiebreaker fixture status
-    fixtures_data['tiebreaker_fixtures'][group_name][4] = 'completed' # Set status to completed
-
-    # Remove group from pending tiebreakers in tournament_state
-    if 'pending_tiebreakers' in tournament_state and group_name in tournament_state['pending_tiebreakers']:
-        del tournament_state['pending_tiebreakers'][group_name]
-
-    # Determine the qualified and eliminated players from this tiebreaker
-    # Add winner to the main qualified list (this needs to be part of how advance_to_knockout is re-triggered)
-    # The simplest way is to just let advance_to_knockout re-evaluate when called next.
-    
-    save_state("fixtures", fixtures_data)
-    save_state("tournament_state", tournament_state)
-
-    await update.message.reply_text(
-        f"✅ Tiebreaker for Group *{escape_markdown_v2(group_name).upper()}* submitted\!\n"
-        f"*{get_player_display_name(players.get(winner_id, {}))}* qualifies for Round of 16\!\n"
-        f"*{get_player_display_name(players.get(loser_id, {}))}* is eliminated❌\.",
-        parse_mode=ParseMode.MARKDOWN_V2
-    )
-    print(f"DEBUG: Tiebreaker for Group {group_name} resolved. Winner: {winner_id}")
-
-    # After a tiebreaker is submitted, you might want to re-run advance_to_knockout
-    # to see if all ties are now resolved and the knockout stage can begin.
-    # await advance_to_knockout(context) # Be careful with recursive calls, ensure state is correctly managed
+submit_tiebreaker_result
 
 
 
