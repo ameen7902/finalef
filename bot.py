@@ -1253,10 +1253,7 @@ async def advance_group_round(update: Update, context: ContextTypes.DEFAULT_TYPE
         # This is where your 'advance_to_knockout' function gets called,
         # after ALL group rounds are complete and confirmed by the admin via /advance_group_round.
         await advance_to_knockout(context)
-import json # Make sure json is imported if not already
 
-# You might want to define a specific stage for pending tiebreakers
-# PENDING_TIEBREAKERS_STAGE = "group_stage_tiebreakers_pending" 
 
 async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     print("DEBUG: Entering advance_to_knockout function.")
@@ -1270,15 +1267,15 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     # --- NEW: Check if there are pending tiebreakers from previous runs ---
     pending_tiebreakers = tournament_state.get('pending_tiebreakers', {})
     if pending_tiebreakers:
-        message = "*🚨 Knockout Stage On Hold: Tiebreakers Pending! 🚨*\n\n" \
+        message = "*🚨 Knockout Stage On Hold: Tiebreakers Pending\! 🚨*\n\n" \
                   "The following groups still require tiebreaker matches to be played:\n"
         for group_name, tied_players_ids in pending_tiebreakers.items():
             player1_info = players.get(tied_players_ids[0], {})
             player2_info = players.get(tied_players_ids[1], {})
-            message += f"- *Group {escape_markdown_v2(group_name).upper()}:* " \
+            message += f"\- *Group {escape_markdown_v2(group_name).upper()}:* " \
                        f"{get_player_display_name(player1_info)} vs {get_player_display_name(player2_info)}\n"
-        message += "\nPlease ensure these matches are played and results submitted via the dedicated tiebreaker command (which you will need to create).\n" \
-                   "The Knockout Stage will only begin once all ties are resolved."
+        message += "\nPlease ensure these matches are played and results submitted via the dedicated tiebreaker command\.\n" \
+                   "The Knockout Stage will only begin once all ties are resolved\."
         
         await context.bot.send_message(ADMIN_ID, message, parse_mode=ParseMode.MARKDOWN_V2)
         await context.bot.send_message(GROUP_ID, message, parse_mode=ParseMode.MARKDOWN_V2)
@@ -1292,7 +1289,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     # Ensure tournament is in 'group_stage_completed' before proceeding to final qualification
     if tournament_state.get("stage") != "group_stage_completed":
         print(f"DEBUG: advance_to_knockout called, but tournament state is not 'group_stage_completed'. Current stage: {tournament_state.get('stage')}. Aborting.")
-        await context.bot.send_message(ADMIN_ID, "❌ Knockout stage cannot be initiated. Group stage not marked as completed.")
+        await context.bot.send_message(ADMIN_ID, "❌ Knockout stage cannot be initiated\. Group stage not marked as completed\.")
         return
 
     # Initialize lists to collect summary data
@@ -1345,7 +1342,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
                     group_players_stats[p2_id]['points'] += 1
             else:
                 print(f"WARNING: Skipping incomplete match in group stage standings calculation for {group_name}: {match}")
-                await context.bot.send_message(ADMIN_ID, f"WARNING: Incomplete match detected in Group {group_name}. Cannot fully process standings.")
+                await context.bot.send_message(ADMIN_ID, f"WARNING: Incomplete match detected in Group {group_name}\. Cannot fully process standings\.")
                 # You might want to halt here or flag the group as incomplete
 
         # Convert group_players_stats to a list of (player_id, stats) for sorting
@@ -1355,7 +1352,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
             if p_id in players:
                 players[p_id]['stats'] = stats
             else:
-                print(f"WARNING: Player {p_id} not found in 'players' dictionary during standings update for group {group_name}.")
+                print(f"WARNING: Player {p_id} not found in 'players' dictionary during standings update for group {group_name}\.")
             current_group_standings.append((p_id, stats))
         
         # Sort teams within the current group by points, then GD, then GF
@@ -1371,7 +1368,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
         # Determine qualification based on sorted group standings
         if len(current_group_standings_sorted) < 4:
             print(f"WARNING: Group {group_name} does not have 4 players. Cannot determine full qualification.")
-            await context.bot.send_message(ADMIN_ID, f"WARNING: Group {group_name} incomplete. Cannot determine qualifiers. Aborting knockout progression.")
+            await context.bot.send_message(ADMIN_ID, f"WARNING: Group {group_name} incomplete\. Cannot determine qualifiers\. Aborting knockout progression\.")
             tournament_state["stage"] = "group_stage_incomplete" # Mark it as such for admin
             save_state("tournament_state", tournament_state)
             save_state("players", players)
@@ -1419,11 +1416,11 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     save_state("tournament_state", tournament_state) # Save pending tiebreakers status
 
     # --- Construct and Send Summary Message ---
-    summary_message_parts = ["*🎉 Group Stage Results & Knockout Stage Status!* 🎉\n\n"]
+    summary_message_parts = ["*🎉 Group Stage Results \& Knockout Stage Status\!* 🎉\n\n"]
 
     # Qualified Players
     if group_stage_summary_qualified:
-        summary_message_parts.append("*🏆 Qualified for Knockouts (Confirmed):*\n")
+        summary_message_parts.append("*🏆 Qualified for Knockouts \(Confirmed✅\):*\n")
         for p_info in group_stage_summary_qualified:
             summary_message_parts.append(f"• *{escape_markdown_v2(p_info.get('team', 'N/A'))}* \\({get_player_display_name(p_info)}\\)\n")
         summary_message_parts.append("\n")
@@ -1437,7 +1434,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
 
     # Pending Tiebreakers
     if pending_tiebreakers: # Check the *updated* pending_tiebreakers
-        summary_message_parts.append("*🚨 Tiebreakers Needed! 🚨*\n")
+        summary_message_parts.append("*🚨 Tiebreakers Needed\! 🚨*\n")
         summary_message_parts.append("The following groups have ties for the 2nd qualification spot and require a tiebreaker match:\n")
         for group_name, tied_players_ids in pending_tiebreakers.items():
             player1_info = players.get(tied_players_ids[0], {})
@@ -1469,8 +1466,8 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     if len(all_final_qualified_players) != num_knockout_players_needed:
         await context.bot.send_message(
             ADMIN_ID, 
-            f"❌ Error: Expected {num_knockout_players_needed} qualified players, but found {len(all_final_qualified_players)}. "
-            "Cannot form knockout bracket. Please check group qualifications or pending tiebreakers."
+            f"❌ Error: Expected {num_knockout_players_needed} qualified players\, but found {len(all_final_qualified_players)}\. "
+            "Cannot form knockout bracket\. Please check group qualifications or pending tiebreakers\."
         )
         print(f"ERROR: Incorrect number of qualified players for knockout stage: {len(all_final_qualified_players)} out of {num_knockout_players_needed} needed.")
         tournament_state["stage"] = "group_stage_qualification_error" # New error stage
@@ -1559,7 +1556,7 @@ async def submit_tiebreaker_result(update: Update, context: ContextTypes.DEFAULT
     players = load_state("players") # Load players to get team info
 
     if 'tiebreaker_fixtures' not in fixtures_data or group_name not in fixtures_data['tiebreaker_fixtures']:
-        await update.message.reply_text(f"❌ No pending tiebreaker match found for Group {group_name}.")
+        await update.message.reply_text(f"❌ No pending tiebreaker match found for Group {group_name}\.")
         return
     
     tiebreaker_match = fixtures_data['tiebreaker_fixtures'][group_name]
@@ -1569,7 +1566,7 @@ async def submit_tiebreaker_result(update: Update, context: ContextTypes.DEFAULT
     # Validate that the submitted winner/loser are actually the tied players
     if not ((winner_id == tied_player1_id and loser_id == tied_player2_id) or
             (winner_id == tied_player2_id and loser_id == tied_player1_id)):
-        await update.message.reply_text("❌ Submitted winner/loser IDs do not match the tied players for this group.")
+        await update.message.reply_text("❌ Submitted winner/loser IDs do not match the tied players for this group\.")
         return
 
     # Update tiebreaker fixture status
@@ -1587,9 +1584,9 @@ async def submit_tiebreaker_result(update: Update, context: ContextTypes.DEFAULT
     save_state("tournament_state", tournament_state)
 
     await update.message.reply_text(
-        f"✅ Tiebreaker for Group *{escape_markdown_v2(group_name).upper()}* submitted!\n"
-        f"*{get_player_display_name(players.get(winner_id, {}))}* qualifies for Knockout Stage!\n"
-        f"*{get_player_display_name(players.get(loser_id, {}))}* is eliminated.",
+        f"✅ Tiebreaker for Group *{escape_markdown_v2(group_name).upper()}* submitted\!\n"
+        f"*{get_player_display_name(players.get(winner_id, {}))}* qualifies for Round of 16\!\n"
+        f"*{get_player_display_name(players.get(loser_id, {}))}* is eliminated❌\.",
         parse_mode=ParseMode.MARKDOWN_V2
     )
     print(f"DEBUG: Tiebreaker for Group {group_name} resolved. Winner: {winner_id}")
