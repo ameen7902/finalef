@@ -1652,7 +1652,7 @@ async def mygroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"ERROR: Could not send reply for /mygroup due to markdown parsing error: {e}")
         print(f"Problematic reply_text:\n{reply_text}")
-        await update.message.reply_text("An error occurred while formatting your group info\\. Please contact admin\\. Here's the raw info: \\[`Error: {escape_markdown_v2(str(e))}`\\]", parse_mode=ParseMode.MARKDOWN_V2)\n" + escape_markdown_v2(reply_text), parse_mode=ParseMode.MARKDOWN_V2)        
+        await update.message.reply_text("An error occurred while formatting your group info\\. Please contact admin\\. Here's the raw info: \\[`Error: {escape_markdown_v2(str(e))}`\\]", parse_mode=ParseMode.MARKDOWN_V2)
 def get_player_team_name(player_id, players_data):
     return players_data.get(player_id, {}).get('team', f'Unknown Player ({player_id})')
 
