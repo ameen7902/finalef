@@ -1444,15 +1444,15 @@ async def show_knockout_status(update: Update, context: ContextTypes.DEFAULT_TYP
             # Check if this stage is in the future relative to current_stage
             if knockout_stages_order.index(stage_name) > knockout_stages_order.index(current_stage):
                 # Beautified message for future stages (not yet drawn)
-                reply += f"--- 🔮 *{stage_title_escaped}:* \\(Matches to be drawn\\) ---\n\n"
+                reply += f"\-\-\- 🔮 *{stage_title_escaped}:* \\(Matches to be drawn\\) \-\-\-\n\n"
             elif stage_name == "final" and current_stage == "semi_finals":
                 # Beautified message for final when semi-final winners are TBD
-                 reply += f"--- 🗓️ *{stage_title_escaped}:* \\(Teams TBD\\) ---\n\n"
+                 reply += f"\-\-\- 🗓️ *{stage_title_escaped}:* \\(Teams TBD\\) \-\-\-\n\n"
             # else: don't print if it's a past stage that somehow got empty (shouldn't happen with proper flow)
             continue
         
         # Beautified stage header
-        reply += f"--- ✨ *{stage_title_escaped}* ✨ ---\n"
+        reply += f"\-\-\- ✨ *{stage_title_escaped}* ✨ \-\-\-\n"
         
         for match_num, match in enumerate(matches_in_stage, 1):
             if not isinstance(match, list) or len(match) < 4:
