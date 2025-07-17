@@ -347,23 +347,23 @@ async def start_tournament(update, context):
     
     # Admin check
     if user_id != ADMIN_ID:
-        await update.message.reply_text("❌ Only the admin can start the tournament.", parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text("❌ Only the admin can start the tournament\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     players = load_state("players")
     # Player count check
     if len(players) != 32:
-        await update.message.reply_text(f"❌ Need exactly 32 players to start the tournament. Currently have {len(players)}.", parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text(f"❌ Need exactly 32 players to start the tournament\. Currently have {len(players)}\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     tournament_state = load_state("tournament_state")
     # Tournament stage check
     if tournament_state.get("stage") != "registration":
-        await update.message.reply_text("❌ The tournament has already started or is in an advanced stage. Use /reset_tournament to restart.", parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text("❌ The tournament has already started or is in an advanced stage\. Use /reset_tournament to restart\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     # Initial message to admin (before drawing starts)
-    await update.message.reply_text("🎉 The tournament is starting! Initiating live group drawing...", parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text("🎉 The tournament is starting\! Initiating live group drawing\.\.\.", parse_mode=ParseMode.MARKDOWN_V2)
 
     # 1. Make groups and get the group assignments back IN MEMORY
     players_with_groups, groups_structure = await make_groups(context) 
@@ -395,16 +395,16 @@ async def start_tournament(update, context):
     save_state("tournament_state", tournament_state)
 
     # Final messages to admin and group chat after everything is done (group drawing and fixtures)
-    final_message_for_admin = "✅ Group drawing complete and fixtures generated! Tournament is officially in the Group Stage!"
+    final_message_for_admin = "✅ Group drawing complete and fixtures generated\! Tournament is officially in the Group Stage\!"
     await update.message.reply_text(final_message_for_admin, parse_mode=ParseMode.MARKDOWN_V2)
     
-    # Send a general announcement to the group chat (if you have one)
-    # if 'GROUP_ID' in globals() and GROUP_ID:
-    #     await context.bot.send_message(
-    #         GROUP_ID,
-    #         "🏆 The tournament has officially begun! Group stage fixtures generated! Use /fixtures to see your match schedule and /mygroup for your group's details.",
-    #         parse_mode=ParseMode.MARKDOWN_V2
-    #     )
+    Send a general announcement to the group chat (if you have one)
+    if 'GROUP_ID' in globals() and GROUP_ID:
+        await context.bot.send_message(
+            GROUP_ID,
+            "🏆 The tournament has officially begun\! Group stage fixtures generated\! Use /fixtures to see your match schedule and /mygroup for your group's details\.",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
     
     print("DEBUG: Start tournament command finished and all final messages sent.")
 async def make_groups(context):
