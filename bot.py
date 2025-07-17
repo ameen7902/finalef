@@ -1501,37 +1501,40 @@ async def mygroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     reply_text = ""
-    reply_markup = None # Initialize reply_markup to None
+    # reply_markup = None # Removed as per request
 
     if current_stage == "group_stage":
-        # --- Display Group Standings for user's group (simplified) ---
+        # --- Display Group Standings for user's group (simplified to Team Name and Points) ---
         
         group_matches = fixtures_data.get("group_stage", {}).get(player_group, [])
         
         # Calculate standings for this specific group
         group_players_stats = {} 
         # Initialize players in the group even if they have no matches, so they appear
-        # Also, fetch their initial stats (if any) and username
+        # Also, fetch their initial stats (if any) and ensure 'ga' is initialized
         for p_id_in_group in load_state("groups").get(player_group, []):
             if p_id_in_group in players:
-                 p_details = players[p_id_in_group]
-                 group_players_stats[p_id_in_group] = {
-                     'team': p_details.get('team', 'N/A'),
-                     'username': p_details.get('username', 'N/A'),
-                     'points': p_details.get("stats", {}).get("points", 0),
-                     'gd': p_details.get("stats", {}).get("gd", 0), # Still need GD/GF for sorting
-                     'gf': p_details.get("stats", {}).get("gf", 0),
-                     'wins': p_details.get("stats", {}).get("wins", 0),
-                     'draws': p_details.get("stats", {}).get("draws", 0),
-                     'losses': p_details.get("stats", {}).get("losses", 0)
-                 }
+                p_details = players[p_id_in_group]
+                group_players_stats[p_id_in_group] = {
+                    'team': p_details.get('team', 'N/A'),
+                    'username': p_details.get('username', 'N/A'),
+                    'points': p_details.get("stats", {}).get("points", 0),
+                    'gd': p_details.get("stats", {}).get("gd", 0), 
+                    'gf': p_details.get("stats", {}).get("gf", 0),
+                    'ga': p_details.get("stats", {}).get("ga", 0), # <<< BUG FIX: Initialize 'ga'
+                    'wins': p_details.get("stats", {}).get("wins", 0),
+                    'draws': p_details.get("stats", {}).get("draws", 0),
+                    'losses': p_details.get("stats", {}).get("losses", 0)
+                }
 
         # Update stats based on completed matches in this group
         for match in group_matches:
-            if len(match) == 5 and all(x is not None for x in [match[0], match[1], match[2], match[3]]):
+            # Check if match is completed (has 5 elements and score is not None)
+            if len(match) == 5 and match[2] is not None and match[3] is not None:
                 p1_id, p2_id, score1, score2, _ = match
 
-                # Ensure players are initialized in temp stats dict
+                # This part initializes players if they somehow weren't already
+                # and ensures all necessary keys are present.
                 for p_id_in_match in [p1_id, p2_id]:
                     if p_id_in_match not in group_players_stats:
                         p_details = players.get(p_id_in_match, {})
@@ -1541,6 +1544,7 @@ async def mygroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             'points': p_details.get("stats", {}).get("points", 0),
                             'gd': p_details.get("stats", {}).get("gd", 0),
                             'gf': p_details.get("stats", {}).get("gf", 0),
+                            'ga': p_details.get("stats", {}).get("ga", 0), # Initialize GA here too
                             'wins': p_details.get("stats", {}).get("wins", 0),
                             'draws': p_details.get("stats", {}).get("draws", 0),
                             'losses': p_details.get("stats", {}).get("losses", 0)
@@ -1549,12 +1553,12 @@ async def mygroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # Update stats for player 1
                 group_players_stats[p1_id]['gf'] += score1
                 group_players_stats[p1_id]['ga'] += score2
-                group_players_stats[p1_id]['gd'] += (score1 - score2)
+                group_players_stats[p1_id]['gd'] = group_players_stats[p1_id]['gf'] - group_players_stats[p1_id]['ga'] # Recalculate GD
 
                 # Update stats for player 2
                 group_players_stats[p2_id]['gf'] += score2
                 group_players_stats[p2_id]['ga'] += score1
-                group_players_stats[p2_id]['gd'] += (score2 - score1)
+                group_players_stats[p2_id]['gd'] = group_players_stats[p2_id]['gf'] - group_players_stats[p2_id]['ga'] # Recalculate GD
 
                 if score1 > score2:
                     group_players_stats[p1_id]['wins'] += 1
@@ -1564,7 +1568,7 @@ async def mygroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     group_players_stats[p2_id]['wins'] += 1
                     group_players_stats[p2_id]['points'] += 3
                     group_players_stats[p1_id]['losses'] += 1
-                else:
+                else: # Draw
                     group_players_stats[p1_id]['draws'] += 1
                     group_players_stats[p1_id]['points'] += 1
                     group_players_stats[p2_id]['draws'] += 1
@@ -1572,39 +1576,35 @@ async def mygroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         standings_list = []
         for p_id, stats in group_players_stats.items():
+            # Only include team and points for display
             standings_list.append({
                 "team": stats['team'],
-                "username": stats['username'],
+                "username": stats['username'], # Keep username for potential future use or debugging
                 "points": stats['points'],
-                "gd": stats['gd'],
-                "gf": stats['gf'],
+                "gd": stats['gd'], # Keep for sorting
+                "gf": stats['gf'], # Keep for sorting
             })
 
+        # Sort by points, then GD, then GF (all descending)
         standings_list.sort(key=lambda x: (x['points'], x['gd'], x['gf']), reverse=True)
 
         reply_text += f"*📊 Your Group \\({escape_markdown_v2(player_group.upper())}\\) Standings:*\n\n"
-        # Simplified header
-        reply_text += "`Rank | Team Name   | Username  | Pts`\n"
-        reply_text += "`-----|-------------|-----------|----`\n"
-
+        
+        # Simplified display without monospace for more natural look
         for rank, team_stat in enumerate(standings_list):
-            team_display = (team_stat['team'] + "            ")[:12] # Pad and truncate
-            username_display = (team_stat['username'] + "          ")[:10] # Pad and truncate
+            team_name_escaped = escape_markdown_v2(team_stat['team'])
             
-            escaped_team_display = escape_markdown_v2(team_display)
-            escaped_username_display = escape_markdown_v2(username_display)
-
+            # Format: Rank. Team Name (Points Pts)
             reply_text += (
-                f"`{rank + 1:<4} | {escaped_team_display:<12} | {escaped_username_display:<10} | {team_stat['points']:<3}`\n"
+                f"{rank + 1}\\. *{team_name_escaped}* \\({team_stat['points']} Pts\\)\n"
             )
         
-        reply_text += "\n"
-        
-        keyboard = [[InlineKeyboardButton("View All Your Fixtures", callback_data="show_my_fixtures")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_text += "\n" # Add a newline at the end of standings
+
+        # --- No Inline Button as per request ---
 
     elif current_stage in ["round_of_16", "quarter_finals", "semi_finals", "final"]:
-        # --- Display Qualified Teams from user's group (with username and points) ---
+        # --- Display Qualified Teams from user's group (simplified) ---
         
         reply_text += f"*🏆 Group {escape_markdown_v2(player_group.upper())} Qualifiers:*\n\n"
         
@@ -1623,27 +1623,24 @@ async def mygroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
             top_1 = sorted_my_group_players[0]
             top_2 = sorted_my_group_players[1]
             
-            # Extract and escape team, username, and points for qualified teams
+            # Extract and escape team, and points for qualified teams
             escaped_team1 = escape_markdown_v2(top_1[1].get('team', 'N/A'))
-            escaped_username1 = escape_markdown_v2(top_1[1].get('username', 'N/A'))
             points1 = top_1[1].get('stats', {}).get('points', 0)
 
             escaped_team2 = escape_markdown_v2(top_2[1].get('team', 'N/A'))
-            escaped_username2 = escape_markdown_v2(top_2[1].get('username', 'N/A'))
             points2 = top_2[1].get('stats', {}).get('points', 0)
             
-            reply_text += f"1\\. *{escaped_team1}* \\(@{escaped_username1}\\) \\({points1} Pts\\) \\(Qualified✅\\)\n"
-            reply_text += f"2\\. *{escaped_team2}* \\(@{escaped_username2}\\) \\({points2} Pts\\) \\(Qualified✅\\)\n\n"
+            reply_text += f"1\\. *{escaped_team1}* \\({points1} Pts\\) \\(Qualified✅\\)\n"
+            reply_text += f"2\\. *{escaped_team2}* \\({points2} Pts\\) \\(Qualified✅\\)\n\n"
             
             if len(sorted_my_group_players) > 2:
                 reply_text += "Other teams in your group did not qualify\\.\n\n"
         else:
             reply_text += "Not enough players in your group to determine qualifiers yet\\.\n\n"
             
-        keyboard = [[InlineKeyboardButton("View Current Knockout Matches", callback_data="show_all_knockout_matches")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # --- No Inline Button as per request ---
 
-    else:
+    else: # Tournament is in 'registration' stage or invalid
         await update.message.reply_text(
             f"Tournament is in '{escape_markdown_v2(current_stage)}' stage\\. Group information is not yet applicable\\.",
             parse_mode=ParseMode.MARKDOWN_V2
@@ -1651,11 +1648,11 @@ async def mygroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     try:
-        await update.message.reply_text(reply_text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=reply_markup)
+        await update.message.reply_text(reply_text, parse_mode=ParseMode.MARKDOWN_V2) # Removed reply_markup
     except Exception as e:
         print(f"ERROR: Could not send reply for /mygroup due to markdown parsing error: {e}")
         print(f"Problematic reply_text:\n{reply_text}")
-        await update.message.reply_text("An error occurred while formatting your group info\\. Please contact admin\\. Here's the raw info:\n" + escape_markdown_v2(reply_text), parse_mode=ParseMode.MARKDOWN_V2)        
+        await update.message.reply_text("An error occurred while formatting your group info\\. Please contact admin\\. Here's the raw info: \\[`Error: {escape_markdown_v2(str(e))}`\\]", parse_mode=ParseMode.MARKDOWN_V2)\n" + escape_markdown_v2(reply_text), parse_mode=ParseMode.MARKDOWN_V2)        
 def get_player_team_name(player_id, players_data):
     return players_data.get(player_id, {}).get('team', f'Unknown Player ({player_id})')
 
