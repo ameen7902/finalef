@@ -1539,7 +1539,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
 async def submit_tiebreaker_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"DEBUG: Raw command args received: {context.args}")
     print(f"DEBUG: Number of args received: {len(context.args)}")
-
+    GROUP_ID = "-1002835703789"
     args = context.args
     
     group_name_from_input = None # This will hold the group name derived from user input
