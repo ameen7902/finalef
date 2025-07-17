@@ -1535,9 +1535,120 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
 
 
 
-# Assuming this function is called when a tiebreaker result is submitted
-# You might make this an admin-only command or part of a ConversationHandler
-submit_tiebreaker_result
+# Make sure you have 'import re' at the top of your file if you plan to use regex,
+# though the .replace() on quotes is sufficient here without importing 're'
+
+async def submit_tiebreaker_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"DEBUG: Raw command args received: {context.args}")
+    print(f"DEBUG: Number of args received: {len(context.args)}")
+
+    args = context.args
+    
+    group_name_from_input = None # This will hold the group name derived from user input
+    winner_id_str = None
+    loser_id_str = None
+
+    if len(args) == 3:
+        # Standard case: e.g., /submit GroupA 1015 1023
+        group_name_from_input = args[0]
+        winner_id_str = args[1]
+        loser_id_str = args[2]
+    elif len(args) == 4:
+        # Case for "Group A" being split into ['Group', 'A'] or ['"Group', 'A"']
+        # We combine the first two parts and remove any leftover quotes
+        group_name_from_input = f"{args[0]} {args[1]}".replace('"', '')
+        winner_id_str = args[2]
+        loser_id_str = args[3]
+    else:
+        # Incorrect number of arguments for any recognized pattern
+        await update.message.reply_text("Usage: /submit_tiebreaker_result <group_name> <winner_player_id> <loser_player_id>")
+        return
+
+    # Debug what the derived group_name_from_input is
+    print(f"DEBUG: Derived group_name_from_input: '{group_name_from_input}'")
+
+    fixtures_data = load_state("fixtures")
+    tournament_state = load_state("tournament_state")
+    players = load_state("players")
+
+    # We need to find the exact group name key that exists in fixtures_data['tiebreaker_fixtures']
+    # based on the group_name_from_input.
+    actual_group_name_in_fixtures = None
+    if 'tiebreaker_fixtures' in fixtures_data:
+        # Iterate through the actual keys in your tiebreaker_fixtures to find a match
+        for stored_group_key in fixtures_data['tiebreaker_fixtures'].keys():
+            # For comparison, we can normalize both the input and the stored key
+            # (e.g., remove spaces and convert to lowercase)
+            # This makes the bot more forgiving if the user types "group A" or "GROUPA"
+            normalized_input = group_name_from_input.replace(" ", "").lower()
+            normalized_stored_key = stored_group_key.replace(" ", "").lower()
+
+            if normalized_input == normalized_stored_key:
+                actual_group_name_in_fixtures = stored_group_key # Use the exact stored key
+                break
+    
+    # If no matching group name was found after flexible comparison
+    if actual_group_name_in_fixtures is None:
+        await update.message.reply_text(
+            f"❌ No tiebreaker match found for group '{escape_markdown_v2(group_name_from_input)}'\\. "
+            f"Please ensure the group name is correct and exists in fixtures\\.",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+
+    # Now, use the 'actual_group_name_in_fixtures' for all subsequent lookups
+    group_name = actual_group_name_in_fixtures # Rename for clarity for the rest of the function
+    print(f"DEBUG: Using actual group name from fixtures: '{group_name}'")
+
+
+    # --- The rest of the function remains largely the same as previous iterations ---
+
+    tiebreaker_match = fixtures_data['tiebreaker_fixtures'][group_name]
+
+    # Check if the tiebreaker is actually pending (as improved before)
+    if len(tiebreaker_match) < 5 or tiebreaker_match[4] != 'pending':
+        await update.message.reply_text(
+            f"❌ Tiebreaker match for Group {escape_markdown_v2(group_name)} is not pending or has already been completed.",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+    
+    tied_player1_id = tiebreaker_match[0]
+    tied_player2_id = tiebreaker_match[1]
+
+    # Convert IDs to strings explicitly to match how they are stored in JSON
+    try:
+        winner_id = str(winner_id_str)
+        loser_id = str(loser_id_str)
+    except ValueError:
+        await update.message.reply_text("❌ Player IDs must be numbers.", parse_mode=ParseMode.MARKDOWN_V2)
+        return
+
+    # Validate that the submitted winner/loser are actually the tied players
+    if not ((winner_id == tied_player1_id and loser_id == tied_player2_id) or
+            (winner_id == tied_player2_id and loser_id == tied_player1_id)):
+        await update.message.reply_text("❌ Submitted winner/loser players do not match the tied players for this group.", parse_mode=ParseMode.MARKDOWN_V2)
+        return
+
+    # Update tiebreaker fixture status
+    fixtures_data['tiebreaker_fixtures'][group_name][4] = 'completed' 
+    fixtures_data['tiebreaker_fixtures'][group_name][2] = winner_id 
+    fixtures_data['tiebreaker_fixtures'][group_name][3] = loser_id  
+
+    # Remove group from pending tiebreakers in tournament_state
+    if 'pending_tiebreakers' in tournament_state and group_name in tournament_state['pending_tiebreakers']:
+        del tournament_state['pending_tiebreakers'][group_name]
+
+    save_state("fixtures", fixtures_data)
+    save_state("tournament_state", tournament_state)
+
+    await update.message.reply_text(
+        f"✅ Tiebreaker for Group *{escape_markdown_v2(group_name)}* submitted!\n"
+        f"*{get_player_display_name(players.get(winner_id, {}))}* qualifies for Knockout Stage!\n"
+        f"*{get_player_display_name(players.get(loser_id, {}))}* is eliminated.",
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+    print(f"DEBUG: Tiebreaker for Group {group_name} resolved. Winner: {winner_id}")
 
 
 
