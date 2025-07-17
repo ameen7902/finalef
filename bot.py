@@ -225,6 +225,17 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Registration is closed. The tournament has already started.")
         return
 
+    # --- NEW: Check for username ---
+    if not user.username:
+        await update.message.reply_text(
+            f"🚫 To participate in this tournament, you need to have a Telegram username. "
+            f"Usernames allow us to properly tag you in match fixtures and results, and ensure fair play.\n\n"
+            f"Please go to your Telegram *Settings* -> *Edit Profile* -> *Username*, set one, and then try `/register` again.",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return # Stop registration here if no username
+
+    # --- Rest of your existing code (only proceeds if user has a username) ---
     lock_user(user.id)
 
     try:
@@ -237,7 +248,7 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Error sending DM for registration: {e}")
         await update.message.reply_text("❌ Couldn't send DM. Please start the bot first: @e_tournament_bot")
-    finally: # Ensure unlock even if DM fails
+    finally:
         unlock_user()
 
 def build_team_buttons():
