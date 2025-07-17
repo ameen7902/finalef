@@ -1392,7 +1392,184 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
         )
         await notify_knockout_matches(context, next_stage)
         print(f"DEBUG: Notifications sent for {next_stage} start.")
+
+async def mygroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    print(f"DEBUG: MyGroup command received from user_id: {user_id}")
+
+    players = load_state("players")
+    tournament_state = load_state("tournament_state")
+    fixtures_data = load_state("fixtures") # Needed for group stage matches to calculate standings
+    
+    current_stage = tournament_state.get("stage", "registration")
+
+    if user_id not in players:
+        await update.message.reply_text("❌ You are not registered for the tournament\\. Use /register\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return
+
+    player_info = players[user_id]
+    player_group = player_info.get("group")
+
+    if not player_group:
+        await update.message.reply_text("❌ You are not assigned to any group yet\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return
+
+    reply_text = ""
+    reply_markup = None # Initialize reply_markup to None
+
+    if current_stage == "group_stage":
+        # --- Display Group Standings for user's group (simplified) ---
         
+        group_matches = fixtures_data.get("group_stage", {}).get(player_group, [])
+        
+        # Calculate standings for this specific group
+        group_players_stats = {} 
+        # Initialize players in the group even if they have no matches, so they appear
+        # Also, fetch their initial stats (if any) and username
+        for p_id_in_group in load_state("groups").get(player_group, []):
+            if p_id_in_group in players:
+                 p_details = players[p_id_in_group]
+                 group_players_stats[p_id_in_group] = {
+                     'team': p_details.get('team', 'N/A'),
+                     'username': p_details.get('username', 'N/A'),
+                     'points': p_details.get("stats", {}).get("points", 0),
+                     'gd': p_details.get("stats", {}).get("gd", 0), # Still need GD/GF for sorting
+                     'gf': p_details.get("stats", {}).get("gf", 0),
+                     'wins': p_details.get("stats", {}).get("wins", 0),
+                     'draws': p_details.get("stats", {}).get("draws", 0),
+                     'losses': p_details.get("stats", {}).get("losses", 0)
+                 }
+
+        # Update stats based on completed matches in this group
+        for match in group_matches:
+            if len(match) == 5 and all(x is not None for x in [match[0], match[1], match[2], match[3]]):
+                p1_id, p2_id, score1, score2, _ = match
+
+                # Ensure players are initialized in temp stats dict
+                for p_id_in_match in [p1_id, p2_id]:
+                    if p_id_in_match not in group_players_stats:
+                        p_details = players.get(p_id_in_match, {})
+                        group_players_stats[p_id_in_match] = {
+                            'team': p_details.get('team', 'N/A'),
+                            'username': p_details.get('username', 'N/A'),
+                            'points': p_details.get("stats", {}).get("points", 0),
+                            'gd': p_details.get("stats", {}).get("gd", 0),
+                            'gf': p_details.get("stats", {}).get("gf", 0),
+                            'wins': p_details.get("stats", {}).get("wins", 0),
+                            'draws': p_details.get("stats", {}).get("draws", 0),
+                            'losses': p_details.get("stats", {}).get("losses", 0)
+                        }
+
+                # Update stats for player 1
+                group_players_stats[p1_id]['gf'] += score1
+                group_players_stats[p1_id]['ga'] += score2
+                group_players_stats[p1_id]['gd'] += (score1 - score2)
+
+                # Update stats for player 2
+                group_players_stats[p2_id]['gf'] += score2
+                group_players_stats[p2_id]['ga'] += score1
+                group_players_stats[p2_id]['gd'] += (score2 - score1)
+
+                if score1 > score2:
+                    group_players_stats[p1_id]['wins'] += 1
+                    group_players_stats[p1_id]['points'] += 3
+                    group_players_stats[p2_id]['losses'] += 1
+                elif score1 < score2:
+                    group_players_stats[p2_id]['wins'] += 1
+                    group_players_stats[p2_id]['points'] += 3
+                    group_players_stats[p1_id]['losses'] += 1
+                else:
+                    group_players_stats[p1_id]['draws'] += 1
+                    group_players_stats[p1_id]['points'] += 1
+                    group_players_stats[p2_id]['draws'] += 1
+                    group_players_stats[p2_id]['points'] += 1
+
+        standings_list = []
+        for p_id, stats in group_players_stats.items():
+            standings_list.append({
+                "team": stats['team'],
+                "username": stats['username'],
+                "points": stats['points'],
+                "gd": stats['gd'],
+                "gf": stats['gf'],
+            })
+
+        standings_list.sort(key=lambda x: (x['points'], x['gd'], x['gf']), reverse=True)
+
+        reply_text += f"*📊 Your Group \\({escape_markdown_v2(player_group.upper())}\\) Standings:*\n\n"
+        # Simplified header
+        reply_text += "`Rank | Team Name   | Username  | Pts`\n"
+        reply_text += "`-----|-------------|-----------|----`\n"
+
+        for rank, team_stat in enumerate(standings_list):
+            team_display = (team_stat['team'] + "            ")[:12] # Pad and truncate
+            username_display = (team_stat['username'] + "          ")[:10] # Pad and truncate
+            
+            escaped_team_display = escape_markdown_v2(team_display)
+            escaped_username_display = escape_markdown_v2(username_display)
+
+            reply_text += (
+                f"`{rank + 1:<4} | {escaped_team_display:<12} | {escaped_username_display:<10} | {team_stat['points']:<3}`\n"
+            )
+        
+        reply_text += "\n"
+        
+        keyboard = [[InlineKeyboardButton("View All Your Fixtures", callback_data="show_my_fixtures")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+    elif current_stage in ["round_of_16", "quarter_finals", "semi_finals", "final"]:
+        # --- Display Qualified Teams from user's group (with username and points) ---
+        
+        reply_text += f"*🏆 Group {escape_markdown_v2(player_group.upper())} Qualifiers:*\n\n"
+        
+        players_in_my_group = [
+            (p_id, p_info) for p_id, p_info in players.items() 
+            if p_info.get('group') == player_group and 'stats' in p_info
+        ]
+
+        sorted_my_group_players = sorted(
+            players_in_my_group,
+            key=lambda x: (x[1]['stats']['points'], x[1]['stats']['gd'], x[1]['stats']['gf']),
+            reverse=True
+        )
+
+        if len(sorted_my_group_players) >= 2:
+            top_1 = sorted_my_group_players[0]
+            top_2 = sorted_my_group_players[1]
+            
+            # Extract and escape team, username, and points for qualified teams
+            escaped_team1 = escape_markdown_v2(top_1[1].get('team', 'N/A'))
+            escaped_username1 = escape_markdown_v2(top_1[1].get('username', 'N/A'))
+            points1 = top_1[1].get('stats', {}).get('points', 0)
+
+            escaped_team2 = escape_markdown_v2(top_2[1].get('team', 'N/A'))
+            escaped_username2 = escape_markdown_v2(top_2[1].get('username', 'N/A'))
+            points2 = top_2[1].get('stats', {}).get('points', 0)
+            
+            reply_text += f"1\\. *{escaped_team1}* \\(@{escaped_username1}\\) \\({points1} Pts\\) \\(Qualified✅\\)\n"
+            reply_text += f"2\\. *{escaped_team2}* \\(@{escaped_username2}\\) \\({points2} Pts\\) \\(Qualified✅\\)\n\n"
+            
+            if len(sorted_my_group_players) > 2:
+                reply_text += "Other teams in your group did not qualify\\.\n\n"
+        else:
+            reply_text += "Not enough players in your group to determine qualifiers yet\\.\n\n"
+            
+        keyboard = [[InlineKeyboardButton("View Current Knockout Matches", callback_data="show_all_knockout_matches")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+    else:
+        await update.message.reply_text(
+            f"Tournament is in '{escape_markdown_v2(current_stage)}' stage\\. Group information is not yet applicable\\.",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+    
+    try:
+        await update.message.reply_text(reply_text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=reply_markup)
+    except Exception as e:
+        print(f"ERROR: Could not send reply for /mygroup due to markdown parsing error: {e}")
+        print(f"Problematic reply_text:\n{reply_text}")
+        await update.message.reply_text("An error occurred while formatting your group info\\. Please contact admin\\. Here's the raw info:\n" + escape_markdown_v2(reply_text), parse_mode=ParseMode.MARKDOWN_V2)        
 def get_player_team_name(player_id, players_data):
     return players_data.get(player_id, {}).get('team', f'Unknown Player ({player_id})')
 
@@ -1539,6 +1716,7 @@ def setup_bot_handlers_sync(app_instance: Application) -> None:
     app_instance.add_handler(CommandHandler("standings", group_standings))
     application.add_handler(CommandHandler("advance_group_round", advance_group_round))
     application.add_handler(CommandHandler("showknockout", show_knockout_status))
+    application.add_handler(CommandHandler("mygroup", mygroup))
     # Dynamically add handlers for /matchX commands for admin scores
     for i in range(1, 101): # Assuming up to 100 matches
         app_instance.add_handler(CommandHandler(f"match{i}", handle_score))
