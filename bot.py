@@ -458,7 +458,7 @@ async def _perform_live_group_drawing(context, players_data, allocated_groups):
     player_ids_for_drawing = list(players_data.keys()) # Get all player IDs from the provided players_data
     random.shuffle(player_ids_for_drawing) # Shuffle for drawing animation sequence
 
-    initial_drawing_message = "✨ FIFA Tournament Live Drawing in progress... ✨\n\n" \
+    initial_drawing_message = "✨ FIFA Tournament Live Drawing in progress\.\.\. ✨\n\n" \
                               "Each team's group will be announced shortly\\. Stay tuned\\!"
     
     await context.bot.send_message(
