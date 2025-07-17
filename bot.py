@@ -3,6 +3,7 @@ import time
 import random
 import re
 import os
+import asyncio
 from collections import defaultdict
 import base64 # For decoding Firebase key
 import asyncio # Keep for async operations
@@ -332,25 +333,7 @@ def make_group_fixtures(groups: dict):
 # --- MODIFIED make_groups FUNCTION ---
 # This function now only assigns players to groups and saves 'players' and 'groups' state.
 # It returns the 'groups' data, and DOES NOT call make_group_fixtures.
-async def make_groups(context: ContextTypes.DEFAULT_TYPE):
-    players = load_state("players") # Load players to update their groups
-    player_ids = list(players.keys())
-    random.shuffle(player_ids)
 
-    groups = defaultdict(list)
-    group_names = [f"Group {chr(65 + i)}" for i in range(8)]
-
-    for i, player_id in enumerate(player_ids):
-        group_name = group_names[i % 8]
-        groups[group_name].append(player_id)
-        players[player_id]['group'] = group_name
-
-    save_state("players", players)
-    # Save groups as a regular dict, not defaultdict
-    save_state("groups", {name: ids for name, ids in groups.items()})
-
-    # This function now RETURNS the groups. It does NOT call make_group_fixtures.
-    return {name: ids for name, ids in groups.items()} # Return as a regular dict
 
 
 # --- MODIFIED start_tournament HANDLER ---
@@ -359,81 +342,97 @@ async def make_groups(context: ContextTypes.DEFAULT_TYPE):
 # --- MODIFIED start_tournament HANDLER ---
 # This function orchestrates everything, gets data from helper functions,
 # and performs the FINAL save of the complete fixtures data.
-async def start_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_tournament(update, context):
     user_id = str(update.effective_user.id)
-    ADMIN_ID="7366894756"
+    
+    # Admin check
     if user_id != ADMIN_ID:
-        await update.message.reply_text("❌ Only the admin can start the tournament.")
+        await update.message.reply_text("❌ Only the admin can start the tournament.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     players = load_state("players")
+    # Player count check
     if len(players) != 32:
-        await update.message.reply_text(f"❌ Need exactly 32 players to start the tournament. Currently have {len(players)}.")
+        await update.message.reply_text(f"❌ Need exactly 32 players to start the tournament. Currently have {len(players)}.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     tournament_state = load_state("tournament_state")
+    # Tournament stage check
     if tournament_state.get("stage") != "registration":
-        await update.message.reply_text("❌ The tournament has already started or is in an advanced stage. Use /reset_tournament to restart.")
+        await update.message.reply_text("❌ The tournament has already started or is in an advanced stage. Use /reset_tournament to restart.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
-    await update.message.reply_text("🎉 The tournament is starting! Generating groups and fixtures...")
+    # Initial message to admin (before drawing starts)
+    await update.message.reply_text("🎉 The tournament is starting! Initiating live group drawing...", parse_mode=ParseMode.MARKDOWN_V2)
 
-    # 1. Make groups and get the group assignments back
-    # (This make_groups function is assumed to be the one you already have that saves players and groups state)
-    groups = await make_groups(context)
+    # 1. Make groups and get the group assignments back IN MEMORY
+    players_with_groups, groups_structure = await make_groups(context) 
 
-    # 2. Generate group fixtures using the returned groups data
-    # (This make_group_fixtures now includes the round_number)
-    group_stage_fixtures = make_group_fixtures(groups)
+    # 2. Perform the live drawing announcements based on the allocated groups
+    # State (players and groups) will be saved INSIDE _perform_live_group_drawing after all announcements
+    await _perform_live_group_drawing(context, players_with_groups, groups_structure)
 
-    # 3. Assemble the COMPLETE fixtures_data object
-    # Initialize all stages to ensure a clean, array-friendly structure
+    # 3. Generate group fixtures using the returned groups data (groups_structure is the final one)
+    group_stage_fixtures = make_group_fixtures(groups_structure) # Assuming make_group_fixtures is defined elsewhere
+
+    # 4. Assemble the COMPLETE fixtures_data object
     fixtures_data = {
         "group_stage": group_stage_fixtures,
-        "round_of_16": [],   # Initialize as empty list for future knockout matches
+        "round_of_16": [],    # Initialize as empty list for future knockout matches
         "quarter_finals": [],
         "semi_finals": [],
         "final": []
     }
 
-    # === THIS IS A DEBUG PRINT - YOU CAN REMOVE IT LATER ===
     print(f"DEBUG: Fixtures data *before* saving to Firebase: {json.dumps(fixtures_data, indent=2)}")
 
-    # === PERFORM THE SINGLE, FINAL SAVE OF THE COMPLETE FIXTURES DATA ===
+    # 5. Perform the single, final save of the complete fixtures data
     save_state("fixtures", fixtures_data)
 
-    # 4. Update tournament state - Initialize current group match round
-    tournament_state["stage"] = "group_stage"
-    tournament_state["group_match_round"] = 0 # NEW: Initialize current round to 0 (Round 1 conceptually)
+    # 6. Update tournament state - Initialize current group match round
+    tournament_state["stage"] = "group_stage" # Now safe to change stage
+    tournament_state["group_match_round"] = 0 
     save_state("tournament_state", tournament_state)
 
-    await update.message.reply_text("🏆 Tournament has begun! Group stage fixtures generated for Round 1.")
-    await context.bot.send_message(GROUP_ID, "🔢 Group fixtures generated for Round 1! Use /fixtures to see your match schedule and /standings for current rankings.")
-
-
-# --- MODIFIED make_groups FUNCTION ---
-# This function now only assigns players to groups and saves 'players' and 'groups' state.
-# It RETURNS the 'groups' data, and DOES NOT call make_group_fixtures itself.
-async def make_groups(context: ContextTypes.DEFAULT_TYPE):
-    players = load_state("players")
+    # Final messages to admin and group chat after everything is done (group drawing and fixtures)
+    final_message_for_admin = "✅ Group drawing complete and fixtures generated! Tournament is officially in the Group Stage!"
+    await update.message.reply_text(final_message_for_admin, parse_mode=ParseMode.MARKDOWN_V2)
+    
+    # Send a general announcement to the group chat (if you have one)
+    # if 'GROUP_ID' in globals() and GROUP_ID:
+    #     await context.bot.send_message(
+    #         GROUP_ID,
+    #         "🏆 The tournament has officially begun! Group stage fixtures generated! Use /fixtures to see your match schedule and /mygroup for your group's details.",
+    #         parse_mode=ParseMode.MARKDOWN_V2
+    #     )
+    
+    print("DEBUG: Start tournament command finished and all final messages sent.")
+async def make_groups(context):
+    """
+    Allocates registered players into groups in memory.
+    It DOES NOT save state here.
+    Returns (players_data_with_groups, groups_structure).
+    """
+    players = load_state("players") # Load players initially
     player_ids = list(players.keys())
     random.shuffle(player_ids)
 
     groups = defaultdict(list)
     group_names = [f"Group {chr(65 + i)}" for i in range(8)]
 
+    # Temporary players_data to hold in-memory changes
+    players_data_with_groups = players.copy() 
+
     for i, player_id in enumerate(player_ids):
         group_name = group_names[i % 8]
         groups[group_name].append(player_id)
-        players[player_id]['group'] = group_name
+        players_data_with_groups[player_id]['group'] = group_name # Update group in temp dict
 
-    save_state("players", players)
-    # Save groups as a regular dict, not defaultdict
-    save_state("groups", {name: ids for name, ids in groups.items()})
+    # Convert defaultdict to regular dict for groups before returning
+    groups_structure = {name: ids for name, ids in groups.items()}
 
-    # This function now RETURNS the groups. It does NOT call make_group_fixtures.
-    return {name: ids for name, ids in groups.items()} # Return as a regular dict
-
+    print("DEBUG: make_groups calculated groups in memory. Not saved yet.")
+    return players_data_with_groups, groups_structure
 
 def make_group_fixtures(groups: dict):
     fixtures_data = load_state("fixtures") # Temporarily load to potentially merge if needed, but not saving back here
@@ -445,6 +444,79 @@ def make_group_fixtures(groups: dict):
         group_stage_fixtures[group_name] = group_fixtures
 
     return group_stage_fixtures
+
+async def _perform_live_group_drawing(context, players_data, allocated_groups):
+    """
+    Performs the live drawing announcements with delays.
+    Crucially, it SAVES the updated players and groups state AFTER all announcements.
+    """
+    print("DEBUG: _perform_live_group_drawing function started. Will save state at the end.")
+
+    player_ids_for_drawing = list(players_data.keys()) # Get all player IDs from the provided players_data
+    random.shuffle(player_ids_for_drawing) # Shuffle for drawing animation sequence
+
+    initial_drawing_message = "✨ FIFA Tournament Live Drawing in progress... ✨\n\n" \
+                              "Each team's group will be announced shortly\\. Stay tuned\\!"
+    
+    # Send initial message to admin
+    await context.bot.send_message(
+        chat_id=ADMIN_ID, 
+        text=initial_drawing_message,
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+    # Send initial message to public group (uncomment and set GROUP_ID if you use one)
+    # if 'GROUP_ID' in globals() and GROUP_ID: # Check if GROUP_ID is defined and not None/empty
+    #     await context.bot.send_message(
+    #        chat_id=GROUP_ID,
+    #        text=initial_drawing_message,
+    #        parse_mode=ParseMode.MARKDOWN_V2
+    #    )
+
+    for i, player_id in enumerate(player_ids_for_drawing):
+        player_info = players_data.get(player_id, {})
+        team_name = player_info.get('team', 'N/A')
+        username = player_info.get('username', 'N/A')
+        assigned_group = player_info.get('group', 'N/A Group') # Get the group already assigned by make_groups (in memory)
+
+        announcement_text = (
+            f"🎉 *ANNOUNCEMENT* 🎉\n"
+            f"Team *{escape_markdown_v2(team_name)}* \\(@{escape_markdown_v2(username)}\\) "
+            f"has been officially allotted to *{escape_markdown_v2(assigned_group)}*\\!"
+        )
+        
+        # Send announcement to admin
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=announcement_text,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        # Send announcement to public group (uncomment if you use one)
+        # if 'GROUP_ID' in globals() and GROUP_ID:
+        #    await context.bot.send_message(
+        #        chat_id=GROUP_ID,
+        #        text=announcement_text,
+        #        parse_mode=ParseMode.MARKDOWN_V2
+        #    )
+
+        print(f"DEBUG: Announcing {team_name} in {assigned_group}.")
+
+        if i < len(player_ids_for_drawing) - 1: 
+            await asyncio.sleep(20) # 20-second delay
+
+    # --- Crucial: SAVE STATE AFTER ALL ANNOUNCEMENTS ARE DONE ---
+    save_state("players", players_data) # Save players with their new group assignments
+    save_state("groups", allocated_groups) # Save the group structure
+    print("DEBUG: All drawing announcements complete. Players and Groups state SAVED.")
+
+
+    # Final summary message for the admin (can be customized or removed if the main start_tournament sends one)
+    final_drawing_summary = "✅ Live group drawing complete! All teams have been announced."
+    await context.bot.send_message(
+        chat_id=ADMIN_ID,
+        text=final_drawing_summary,
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+    print("DEBUG: _perform_live_group_drawing finished.")
 def generate_round_robin_schedule(players_in_group):
     """
     Generates a round-robin schedule for 4 players over 3 rounds.
