@@ -1253,136 +1253,270 @@ async def advance_group_round(update: Update, context: ContextTypes.DEFAULT_TYPE
         # This is where your 'advance_to_knockout' function gets called,
         # after ALL group rounds are complete and confirmed by the admin via /advance_group_round.
         await advance_to_knockout(context)
+import json # Make sure json is imported if not already
+
+# You might want to define a specific stage for pending tiebreakers
+# PENDING_TIEBREAKERS_STAGE = "group_stage_tiebreakers_pending" 
+
 async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     print("DEBUG: Entering advance_to_knockout function.")
     tournament_state = load_state("tournament_state")
     players = load_state("players")
     fixtures_data = load_state("fixtures")
-    # ADMIN_ID="7366894756" # Make sure ADMIN_ID is defined elsewhere, e.g., globally
-    ADMIN_ID = "7366894756" # Temporary for demonstration, define this properly!
-    GROUP_ID = -100 # Placeholder, define this properly!
+    
+    ADMIN_ID = "7366894756" # Define this properly!
+    GROUP_ID = -100        # Define this properly!
+
+    # --- NEW: Check if there are pending tiebreakers from previous runs ---
+    pending_tiebreakers = tournament_state.get('pending_tiebreakers', {})
+    if pending_tiebreakers:
+        message = "*🚨 Knockout Stage On Hold: Tiebreakers Pending! 🚨*\n\n" \
+                  "The following groups still require tiebreaker matches to be played:\n"
+        for group_name, tied_players_ids in pending_tiebreakers.items():
+            player1_info = players.get(tied_players_ids[0], {})
+            player2_info = players.get(tied_players_ids[1], {})
+            message += f"- *Group {escape_markdown_v2(group_name).upper()}:* " \
+                       f"{get_player_display_name(player1_info)} vs {get_player_display_name(player2_info)}\n"
+        message += "\nPlease ensure these matches are played and results submitted via the dedicated tiebreaker command (which you will need to create).\n" \
+                   "The Knockout Stage will only begin once all ties are resolved."
+        
+        await context.bot.send_message(ADMIN_ID, message, parse_mode=ParseMode.MARKDOWN_V2)
+        await context.bot.send_message(GROUP_ID, message, parse_mode=ParseMode.MARKDOWN_V2)
+        print(f"DEBUG: Knockout stage halted. Tiebreakers pending: {pending_tiebreakers.keys()}")
+        # Important: Don't change stage if tiebreakers are pending. Stay in 'group_stage_completed' or a new 'tiebreaker_pending' stage
+        # You might set tournament_state["stage"] = PENDING_TIEBREAKERS_STAGE here and save_state.
+        # For now, we'll assume if pending_tiebreakers exists, we don't proceed.
+        return # STOP here if tiebreakers are still pending
 
 
-    # Ensure tournament is in 'group_stage_completed' before proceeding
+    # Ensure tournament is in 'group_stage_completed' before proceeding to final qualification
     if tournament_state.get("stage") != "group_stage_completed":
         print(f"DEBUG: advance_to_knockout called, but tournament state is not 'group_stage_completed'. Current stage: {tournament_state.get('stage')}. Aborting.")
         await context.bot.send_message(ADMIN_ID, "❌ Knockout stage cannot be initiated. Group stage not marked as completed.")
         return
 
-    # 1. Calculate final group standings (if not already done by advance_group_round)
-    # This recalculates to ensure the most up-to-date standings for seeding
-    # This logic should mirror parts of your /standings command's calculation for group stage
+    # Initialize lists to collect summary data
+    all_final_qualified_players = [] # To store player IDs for actual knockout seeding
+    group_stage_summary_qualified = [] # For the summary message
+    group_stage_summary_eliminated = [] # For the summary message
+
+    # Initialize tiebreaker fixtures storage if it doesn't exist
+    if 'tiebreaker_fixtures' not in fixtures_data:
+        fixtures_data['tiebreaker_fixtures'] = {} # Stores {group_name: [player1_id, player2_id, None, None, 'pending']}
+
+    # 1. Calculate final group standings and determine qualifiers per group
     for group_name, group_matches in fixtures_data.get("group_stage", {}).items():
-        group_players = {} # player_id: player_stats
+        print(f"DEBUG: Processing group: {group_name}")
+        group_players_stats = {} # player_id: player_stats
+
         for match in group_matches:
             # Ensure match data is complete before processing (player1, player2, score1, score2, round)
-            if len(match) == 5 and all(x is not None for x in [match[0], match[1], match[2], match[3]]):
-                p1_id, p2_id, score1, score2, _ = match # _ here is the round number, which is fine
+            if len(match) >= 4 and all(x is not None for x in [match[0], match[1], match[2], match[3]]):
+                p1_id, p2_id, score1, score2 = match[0], match[1], match[2], match[3]
                 
                 # Initialize player stats if not present
-                if p1_id not in group_players:
-                    group_players[p1_id] = {'wins': 0, 'draws': 0, 'losses': 0, 'gf': 0, 'ga': 0, 'gd': 0, 'points': 0}
-                if p2_id not in group_players:
-                    group_players[p2_id] = {'wins': 0, 'draws': 0, 'losses': 0, 'gf': 0, 'ga': 0, 'gd': 0, 'points': 0}
+                if p1_id not in group_players_stats:
+                    group_players_stats[p1_id] = {'wins': 0, 'draws': 0, 'losses': 0, 'gf': 0, 'ga': 0, 'gd': 0, 'points': 0}
+                if p2_id not in group_players_stats:
+                    group_players_stats[p2_id] = {'wins': 0, 'draws': 0, 'losses': 0, 'gf': 0, 'ga': 0, 'gd': 0, 'points': 0}
 
                 # Update stats for player 1
-                group_players[p1_id]['gf'] += score1
-                group_players[p1_id]['ga'] += score2
-                group_players[p1_id]['gd'] += (score1 - score2)
+                group_players_stats[p1_id]['gf'] += score1
+                group_players_stats[p1_id]['ga'] += score2
+                group_players_stats[p1_id]['gd'] += (score1 - score2)
 
                 # Update stats for player 2
-                group_players[p2_id]['gf'] += score2
-                group_players[p2_id]['ga'] += score1
-                group_players[p2_id]['gd'] += (score2 - score1)
+                group_players_stats[p2_id]['gf'] += score2
+                group_players_stats[p2_id]['ga'] += score1
+                group_players_stats[p2_id]['gd'] += (score2 - score1)
 
                 if score1 > score2:
-                    group_players[p1_id]['wins'] += 1
-                    group_players[p1_id]['points'] += 3
-                    group_players[p2_id]['losses'] += 1
+                    group_players_stats[p1_id]['wins'] += 1
+                    group_players_stats[p1_id]['points'] += 3
+                    group_players_stats[p2_id]['losses'] += 1
                 elif score1 < score2:
-                    group_players[p2_id]['wins'] += 1
-                    group_players[p2_id]['points'] += 3
-                    group_players[p1_id]['losses'] += 1
+                    group_players_stats[p2_id]['wins'] += 1
+                    group_players_stats[p2_id]['points'] += 3
+                    group_players_stats[p1_id]['losses'] += 1
                 else:
-                    group_players[p1_id]['draws'] += 1
-                    group_players[p1_id]['points'] += 1
-                    group_players[p2_id]['draws'] += 1
-                    group_players[p2_id]['points'] += 1
+                    group_players_stats[p1_id]['draws'] += 1
+                    group_players_stats[p1_id]['points'] += 1
+                    group_players_stats[p2_id]['draws'] += 1
+                    group_players_stats[p2_id]['points'] += 1
             else:
-                print(f"WARNING: Skipping incomplete match in group stage standings calculation: {match}")
+                print(f"WARNING: Skipping incomplete match in group stage standings calculation for {group_name}: {match}")
+                await context.bot.send_message(ADMIN_ID, f"WARNING: Incomplete match detected in Group {group_name}. Cannot fully process standings.")
+                # You might want to halt here or flag the group as incomplete
 
-        # Apply updated stats back to the main players dictionary
-        for p_id, stats in group_players.items():
+        # Convert group_players_stats to a list of (player_id, stats) for sorting
+        current_group_standings = []
+        for p_id, stats in group_players_stats.items():
+            # Apply updated stats back to the main players dictionary
             if p_id in players:
                 players[p_id]['stats'] = stats
             else:
-                print(f"WARNING: Player {p_id} not found in 'players' dictionary during standings update.")
+                print(f"WARNING: Player {p_id} not found in 'players' dictionary during standings update for group {group_name}.")
+            current_group_standings.append((p_id, stats))
+        
+        # Sort teams within the current group by points, then GD, then GF
+        # This is CRUCIAL for per-group qualification
+        current_group_standings_sorted = sorted(
+            current_group_standings,
+            key=lambda x: (x[1]['points'], x[1]['gd'], x[1]['gf']),
+            reverse=True # Highest points/GD/GF first
+        )
+
+        print(f"DEBUG: Group {group_name} Standings: {[(players[p_id].get('team'), s['points'], s['gd'], s['gf']) for p_id, s in current_group_standings_sorted]}")
+
+        # Determine qualification based on sorted group standings
+        if len(current_group_standings_sorted) < 4:
+            print(f"WARNING: Group {group_name} does not have 4 players. Cannot determine full qualification.")
+            await context.bot.send_message(ADMIN_ID, f"WARNING: Group {group_name} incomplete. Cannot determine qualifiers. Aborting knockout progression.")
+            tournament_state["stage"] = "group_stage_incomplete" # Mark it as such for admin
+            save_state("tournament_state", tournament_state)
+            save_state("players", players)
+            return
+
+        team_1st_id, team_1st_stats = current_group_standings_sorted[0]
+        team_2nd_id, team_2nd_stats = current_group_standings_sorted[1]
+        team_3rd_id, team_3rd_stats = current_group_standings_sorted[2]
+        team_4th_id, team_4th_stats = current_group_standings_sorted[3]
+
+        # Check for tie between 2nd and 3rd place (only scenario requiring tiebreaker match)
+        if (team_2nd_stats['points'] == team_3rd_stats['points'] and
+            team_2nd_stats['gd'] == team_3rd_stats['gd'] and
+            team_2nd_stats['gf'] == team_3rd_stats['gf']):
+            
+            # --- TIEBREAKER NEEDED ---
+            print(f"DEBUG: Tie detected in Group {group_name} between {players[team_2nd_id].get('team')} and {players[team_3rd_id].get('team')}")
+            
+            # Mark this group as pending tiebreaker
+            pending_tiebreakers[group_name] = [team_2nd_id, team_3rd_id]
+            tournament_state['pending_tiebreakers'] = pending_tiebreakers # Update state
+
+            # Create a tiebreaker fixture
+            # Structure: [player1_id, player2_id, score1, score2, status]
+            fixtures_data['tiebreaker_fixtures'][group_name] = [team_2nd_id, team_3rd_id, None, None, 'pending']
+            
+            # Add 1st place to qualified for summary, 4th place to eliminated for summary
+            # The 2nd/3rd will be resolved by the tiebreaker match later
+            group_stage_summary_qualified.append(players[team_1st_id])
+            group_stage_summary_eliminated.append(players[team_4th_id])
+
+        else:
+            # --- NO TIEBREAKER NEEDED ---
+            print(f"DEBUG: No tie in Group {group_name}. Qualifiers: {players[team_1st_id].get('team')}, {players[team_2nd_id].get('team')}")
+            all_final_qualified_players.append(team_1st_id)
+            all_final_qualified_players.append(team_2nd_id)
+            
+            group_stage_summary_qualified.append(players[team_1st_id])
+            group_stage_summary_qualified.append(players[team_2nd_id])
+            group_stage_summary_eliminated.append(players[team_3rd_id])
+            group_stage_summary_eliminated.append(players[team_4th_id])
     
     save_state("players", players) # Save updated player stats
+    save_state("fixtures", fixtures_data) # Save new tiebreaker fixtures
+    save_state("tournament_state", tournament_state) # Save pending tiebreakers status
 
-    # 2. Collect all players eligible for knockout based on their group standings
-    # Flatten all group standings into a single list of (player_id, player_info) tuples
-    all_qualified_players = []
-    for player_id, p_info in players.items():
-        if p_info.get('group'): # Ensure player was in a group
-            # Ensure player has stats for sorting
-            if 'stats' in p_info and p_info['stats']['points'] is not None:
-                all_qualified_players.append((player_id, p_info))
-            else:
-                print(f"WARNING: Player {player_id} ({p_info.get('name')}) has no stats. Skipping for knockout qualification.")
+    # --- Construct and Send Summary Message ---
+    summary_message_parts = ["*🎉 Group Stage Results & Knockout Stage Status!* 🎉\n\n"]
 
-    # Sort players by points, then GD, then GF (standard football tie-breakers)
-    sorted_qualified_players = sorted(
-        all_qualified_players,
-        key=lambda x: (x[1]['stats']['points'], x[1]['stats']['gd'], x[1]['stats']['gf']),
-        reverse=True # Highest points/GD/GF first
-    )
+    # Qualified Players
+    if group_stage_summary_qualified:
+        summary_message_parts.append("*🏆 Qualified for Knockouts (Confirmed):*\n")
+        for p_info in group_stage_summary_qualified:
+            summary_message_parts.append(f"• *{escape_markdown_v2(p_info.get('team', 'N/A'))}* \\({get_player_display_name(p_info)}\\)\n")
+        summary_message_parts.append("\n")
 
-    # Extract just the player IDs for pairing
-    qualified_player_ids_for_pairing = [p_id for p_id, _ in sorted_qualified_players]
+    # Eliminated Players
+    if group_stage_summary_eliminated:
+        summary_message_parts.append("*❌ Eliminated from Tournament:*\n")
+        for p_info in group_stage_summary_eliminated:
+            summary_message_parts.append(f"• *{escape_markdown_v2(p_info.get('team', 'N/A'))}* \\({get_player_display_name(p_info)}\\)\n")
+        summary_message_parts.append("\n")
 
-    print(f"DEBUG: Qualified players (sorted): {[(players[p_id]['team'], players[p_id]['stats']['points']) for p_id in qualified_player_ids_for_pairing]}")
+    # Pending Tiebreakers
+    if pending_tiebreakers: # Check the *updated* pending_tiebreakers
+        summary_message_parts.append("*🚨 Tiebreakers Needed! 🚨*\n")
+        summary_message_parts.append("The following groups have ties for the 2nd qualification spot and require a tiebreaker match:\n")
+        for group_name, tied_players_ids in pending_tiebreakers.items():
+            player1_info = players.get(tied_players_ids[0], {})
+            player2_info = players.get(tied_players_ids[1], {})
+            summary_message_parts.append(
+                f"- *Group {escape_markdown_v2(group_name).upper()}:* "
+                f"{get_player_display_name(player1_info)} vs {get_player_display_name(player2_info)}\n"
+            )
+        summary_message_parts.append("\nPlease ensure these matches are played and results submitted via the dedicated tiebreaker command\\.\n")
+        summary_message_parts.append("The Knockout Stage will only begin once all ties are resolved\\.\n")
+    else:
+        # If no pending tiebreakers, confirm knockout stage can begin
+        summary_message_parts.append("All group qualifications are resolved\\. Proceeding to Knockout Stage\\. 🎉\n")
+        summary_message_parts.append("The Knockout Stage \\(Round of 16\\) fixtures will be announced shortly\\! Check /fixtures\\.\n")
 
+    final_summary_message = "".join(summary_message_parts)
+    await context.bot.send_message(GROUP_ID, final_summary_message, parse_mode=ParseMode.MARKDOWN_V2)
+    print("DEBUG: Group Stage Summary message sent.")
 
-    # 3. Create knockout bracket (e.g., Round of 16)
-    # This logic assumes you have enough players for a full 16-team bracket (or 8-team, etc.)
-    # Adjust `num_knockout_players_needed` based on your bracket size
+    # --- Final check before proceeding to create knockout bracket ---
+    if pending_tiebreakers:
+        print("DEBUG: Cannot proceed to knockout. Tiebreakers are pending.")
+        return # STOP here if any tiebreakers are pending
+
+    # 3. Create knockout bracket (only if all groups are resolved)
+    # This logic assumes all_final_qualified_players contains exactly 16 players (8 groups * 2 qualifiers)
     num_knockout_players_needed = 16 # For Round of 16
     
-    if len(qualified_player_ids_for_pairing) < num_knockout_players_needed:
+    if len(all_final_qualified_players) != num_knockout_players_needed:
         await context.bot.send_message(
             ADMIN_ID, 
-            f"❌ Not enough qualified players ({len(qualified_player_ids_for_pairing)}) to form a full Round of 16 bracket ({num_knockout_players_needed} needed). Cannot proceed to knockouts."
+            f"❌ Error: Expected {num_knockout_players_needed} qualified players, but found {len(all_final_qualified_players)}. "
+            "Cannot form knockout bracket. Please check group qualifications or pending tiebreakers."
         )
-        print(f"ERROR: Not enough players for knockout stage: {len(qualified_player_ids_for_pairing)} out of {num_knockout_players_needed} needed.")
-        tournament_state["stage"] = "group_stage_incomplete" # Mark it as such for admin
+        print(f"ERROR: Incorrect number of qualified players for knockout stage: {len(all_final_qualified_players)} out of {num_knockout_players_needed} needed.")
+        tournament_state["stage"] = "group_stage_qualification_error" # New error stage
         save_state("tournament_state", tournament_state)
         return
 
-    # Take only the top N players for the knockout stage
-    top_n_players = qualified_player_ids_for_pairing[:num_knockout_players_needed]
+    # Sort the final qualified players for seeding in the knockout bracket
+    # This ensures 1st place from a group gets a better seed than 2nd place, etc.
+    # The existing global sorting on points/GD/GF is good here.
+    # However, you might want to consider adding group-winner priority for seeding.
+    # For simplicity, we'll re-sort the 'all_final_qualified_players' based on their overall stats.
+    
+    # Reload players state to ensure latest stats if anything changed or to use existing global sort logic
+    # Or, pass player_info along with player_id earlier to avoid re-loading.
+    qualified_players_with_stats = []
+    for p_id in all_final_qualified_players:
+        if p_id in players and 'stats' in players[p_id]:
+            qualified_players_with_stats.append((p_id, players[p_id]['stats']))
+        else:
+            print(f"WARNING: Qualified player {p_id} missing stats during knockout seeding.")
+            # Handle error or assign default stats
+
+    sorted_knockout_seeds = sorted(
+        qualified_players_with_stats,
+        key=lambda x: (x[1]['points'], x[1]['gd'], x[1]['gf']),
+        reverse=True # Highest points/GD/GF first
+    )
+    # Extract just the player IDs for pairing
+    seeds_for_pairing = [p_id for p_id, _ in sorted_knockout_seeds]
+    print(f"DEBUG: Qualified players (sorted for knockout seeding): {[(players[p_id].get('team'), players[p_id].get('stats', {}).get('points')) for p_id in seeds_for_pairing]}")
+
 
     knockout_fixtures_r16 = []
     
     # Manual pairing based on seeding (adjust if your seeding logic is different)
     if num_knockout_players_needed == 16:
-        seeds = top_n_players # top_n_players is already sorted by rank (seed)
-        # ADDED 0 AS THE FIFTH ELEMENT FOR KNOCKOUT MATCHES
-        knockout_fixtures_r16.append([seeds[0], seeds[15], None, None, 0]) # 1 vs 16
-        knockout_fixtures_r16.append([seeds[7], seeds[8], None, None, 0])  # 8 vs 9
-        knockout_fixtures_r16.append([seeds[4], seeds[11], None, None, 0]) # 5 vs 12
-        knockout_fixtures_r16.append([seeds[3], seeds[12], None, None, 0]) # 4 vs 13
-        knockout_fixtures_r16.append([seeds[2], seeds[13], None, None, 0]) # 3 vs 14
-        knockout_fixtures_r16.append([seeds[5], seeds[10], None, None, 0]) # 6 vs 11
-        knockout_fixtures_r16.append([seeds[6], seeds[9], None, None, 0])  # 7 vs 10
-        knockout_fixtures_r16.append([seeds[1], seeds[14], None, None, 0]) # 2 vs 15
-    elif num_knockout_players_needed == 8: # Example for Quarter Finals directly
-        seeds = top_n_players
-        # ADDED 0 AS THE FIFTH ELEMENT FOR KNOCKOUT MATCHES
-        knockout_fixtures_r16.append([seeds[0], seeds[7], None, None, 0]) # 1 vs 8
-        knockout_fixtures_r16.append([seeds[3], seeds[4], None, None, 0]) # 4 vs 5
-        knockout_fixtures_r16.append([seeds[2], seeds[5], None, None, 0]) # 3 vs 6
-        knockout_fixtures_r16.append([seeds[1], seeds[6], None, None, 0]) # 2 vs 7
+        seeds = seeds_for_pairing # use the newly sorted seeds
+        # Each match fixture should have 6 elements: [player1, player2, score1, score2, winner_id, status]
+        knockout_fixtures_r16.append([seeds[0], seeds[15], None, None, None, 'pending']) # 1 vs 16
+        knockout_fixtures_r16.append([seeds[7], seeds[8], None, None, None, 'pending']) # 8 vs 9
+        knockout_fixtures_r16.append([seeds[4], seeds[11], None, None, None, 'pending']) # 5 vs 12
+        knockout_fixtures_r16.append([seeds[3], seeds[12], None, None, None, 'pending']) # 4 vs 13
+        knockout_fixtures_r16.append([seeds[2], seeds[13], None, None, None, 'pending']) # 3 vs 14
+        knockout_fixtures_r16.append([seeds[5], seeds[10], None, None, None, 'pending']) # 6 vs 11
+        knockout_fixtures_r16.append([seeds[6], seeds[9], None, None, None, 'pending']) # 7 vs 10
+        knockout_fixtures_r16.append([seeds[1], seeds[14], None, None, None, 'pending']) # 2 vs 15
     # Add more `elif` blocks here for other bracket sizes if needed
 
     fixtures_data["round_of_16"] = knockout_fixtures_r16 # Store for Round of 16
@@ -1397,10 +1531,74 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     save_state("tournament_state", tournament_state)
     print(f"DEBUG: Tournament state updated to: {tournament_state['stage']}")
 
-    # 5. Send notifications
-    await context.bot.send_message(ADMIN_ID, "🎉 Group Stage is over! The Knockout Stage (Round of 16) has begun!\nCheck /fixtures for the new matchups!")
-    await context.bot.send_message(GROUP_ID, "🎉 The Group Stage has concluded! The Knockout Stage (Round of 16) has begun!\nCheck /fixtures for your new matchup!")
-    print("DEBUG: Notifications sent for knockout stage start.")
+    # 5. Send final notification (already done by summary)
+    # await context.bot.send_message(ADMIN_ID, "🎉 Group Stage is over! The Knockout Stage (Round of 16) has begun!\nCheck /fixtures for the new matchups!")
+    # await context.bot.send_message(GROUP_ID, "🎉 The Group Stage has concluded! The Knockout Stage (Round of 16) has begun!\nCheck /fixtures for your new matchup!")
+    print("DEBUG: Knockout stage start notifications part of summary.")
+
+
+
+# Assuming this function is called when a tiebreaker result is submitted
+# You might make this an admin-only command or part of a ConversationHandler
+async def submit_tiebreaker_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # This example assumes the command comes with group_name, winner_id, loser_id
+    # e.g., /submit_tiebreaker_result GroupA <winner_id> <loser_id>
+    # In a real scenario, you'd likely use InlineKeyboard or a ConversationHandler
+    
+    args = context.args
+    if not args or len(args) != 3:
+        await update.message.reply_text("Usage: /submit_tiebreaker_result <group_name> <winner_player_id> <loser_player_id>")
+        return
+
+    group_name = args[0]
+    winner_id = args[1]
+    loser_id = args[2]
+
+    fixtures_data = load_state("fixtures")
+    tournament_state = load_state("tournament_state")
+    players = load_state("players") # Load players to get team info
+
+    if 'tiebreaker_fixtures' not in fixtures_data or group_name not in fixtures_data['tiebreaker_fixtures']:
+        await update.message.reply_text(f"❌ No pending tiebreaker match found for Group {group_name}.")
+        return
+    
+    tiebreaker_match = fixtures_data['tiebreaker_fixtures'][group_name]
+    tied_player1_id = tiebreaker_match[0]
+    tied_player2_id = tiebreaker_match[1]
+
+    # Validate that the submitted winner/loser are actually the tied players
+    if not ((winner_id == tied_player1_id and loser_id == tied_player2_id) or
+            (winner_id == tied_player2_id and loser_id == tied_player1_id)):
+        await update.message.reply_text("❌ Submitted winner/loser IDs do not match the tied players for this group.")
+        return
+
+    # Update tiebreaker fixture status
+    fixtures_data['tiebreaker_fixtures'][group_name][4] = 'completed' # Set status to completed
+
+    # Remove group from pending tiebreakers in tournament_state
+    if 'pending_tiebreakers' in tournament_state and group_name in tournament_state['pending_tiebreakers']:
+        del tournament_state['pending_tiebreakers'][group_name]
+
+    # Determine the qualified and eliminated players from this tiebreaker
+    # Add winner to the main qualified list (this needs to be part of how advance_to_knockout is re-triggered)
+    # The simplest way is to just let advance_to_knockout re-evaluate when called next.
+    
+    save_state("fixtures", fixtures_data)
+    save_state("tournament_state", tournament_state)
+
+    await update.message.reply_text(
+        f"✅ Tiebreaker for Group *{escape_markdown_v2(group_name).upper()}* submitted!\n"
+        f"*{get_player_display_name(players.get(winner_id, {}))}* qualifies for Knockout Stage!\n"
+        f"*{get_player_display_name(players.get(loser_id, {}))}* is eliminated.",
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+    print(f"DEBUG: Tiebreaker for Group {group_name} resolved. Winner: {winner_id}")
+
+    # After a tiebreaker is submitted, you might want to re-run advance_to_knockout
+    # to see if all ties are now resolved and the knockout stage can begin.
+    # await advance_to_knockout(context) # Be careful with recursive calls, ensure state is correctly managed
+
+
 
 async def notify_knockout_matches(context: ContextTypes.DEFAULT_TYPE, stage: str):
     print(f"DEBUG: notify_knockout_matches called for stage: {stage}")
@@ -1922,6 +2120,7 @@ def setup_bot_handlers_sync(app_instance: Application) -> None:
     application.add_handler(CommandHandler("advance_group_round", advance_group_round))
     application.add_handler(CommandHandler("showknockout", show_knockout_status))
     application.add_handler(CommandHandler("mygroup", mygroup))
+    app_instance.add_handler(CommandHandler("submit_tiebreaker_result", submit_tiebreaker_result))
     # Dynamically add handlers for /matchX commands for admin scores
     for i in range(1, 101): # Assuming up to 100 matches
         app_instance.add_handler(CommandHandler(f"match{i}", handle_score))
