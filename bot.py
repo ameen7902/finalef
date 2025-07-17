@@ -451,54 +451,125 @@ def make_group_fixtures(groups: dict):
 
     return group_stage_fixtures
 
+
+
+
 async def _perform_live_group_drawing(context, players_data, allocated_groups):
     """
-    Performs the live drawing announcements with delays.
+    Performs the live drawing announcements with delays, with a FIFA World Cup draw style.
     Crucially, it SAVES the updated players and groups state AFTER all announcements.
     """
     print("DEBUG: _perform_live_group_drawing function started. Will save state at the end.")
 
-    player_ids_for_drawing = list(players_data.keys()) # Get all player IDs from the provided players_data
-    random.shuffle(player_ids_for_drawing) # Shuffle for drawing animation sequence
-
-    initial_drawing_message = "✨ FIFA Tournament Live Drawing in progress\.\.\. ✨\n\n" \
-                              "Each team's group will be announced shortly\\. Stay tuned\\!"
+    initial_drawing_message = (
+        "✨ FIFA Tournament Live Drawing in progress... ✨\n\n"
+        "Get ready for the exciting group reveals! Each team's destiny will be announced shortly\\. Stay tuned\\!"
+    )
     
+    # Send initial message to the public group chat
     await context.bot.send_message(
         chat_id=GROUP_ID, 
         text=initial_drawing_message,
         parse_mode=ParseMode.MARKDOWN_V2
     )
 
-    for i, player_id in enumerate(player_ids_for_drawing):
-        player_info = players_data.get(player_id, {})
-        team_name = player_info.get('team', 'N/A')
-        username = player_info.get('username', 'N/A')
-        assigned_group = player_info.get('group', 'N/A Group') 
+    # Short delay before the first group draw announcement to build anticipation
+    await asyncio.sleep(5) 
 
-        announcement_text = (
-            f"🎉 *ANNOUNCEMENT* 🎉\n" # This ! is fine as it's part of the emoji/bold combo
-            f"Team *{escape_markdown_v2(team_name)}* \\(@{escape_markdown_v2(username)}\\) "
-            f"has been officially allotted to *{escape_markdown_v2(assigned_group)}*\\!" # This ! is correctly escaped
-        )
-        print(f"DEBUG: Sending announcement for {team_name} to Telegram: '{announcement_text}'")
+    # Get sorted group names (e.g., 'Group A', 'Group B', ...) for orderly announcement
+    sorted_group_names = sorted(allocated_groups.keys())
+
+    # Iterate through each group for announcements
+    for group_name in sorted_group_names:
+        player_ids_in_group = allocated_groups[group_name]
+        random.shuffle(player_ids_in_group) # Shuffle players *within* this group for drawing sequence
+
+        # Announce the start of drawing for this specific group with fanfare
+        group_start_message = f"Next up: The exciting draw for *Group {escape_markdown_v2(group_name).upper()}* is about to begin\\!"
         await context.bot.send_message(
             chat_id=GROUP_ID,
-            text=announcement_text,
+            text=group_start_message,
             parse_mode=ParseMode.MARKDOWN_V2
         )
+        await asyncio.sleep(3) # Short delay before the 'drum roll'
 
-        print(f"DEBUG: Announcing {team_name} in {assigned_group}.")
+        # Drum roll effect
+        await context.bot.send_message(
+            chat_id=GROUP_ID,
+            text="🥁🥁🥁"
+        )
+        await asyncio.sleep(3) # Delay for drum roll
 
-        if i < len(player_ids_for_drawing) - 1: 
-            await asyncio.sleep(20)
+        group_summary_list = [] # To collect player info for the final group summary message
 
-    save_state("players", players_data)
-    save_state("groups", allocated_groups)
+        # Announce each player as they are 'drawn' into the current group
+        for i, player_id in enumerate(player_ids_in_group):
+            player_info = players_data.get(player_id, {})
+            team_name = player_info.get('team', 'N/A')
+            username = player_info.get('username', 'N/A')
+            assigned_group = player_info.get('group', group_name) 
+
+            # Part 1 of the reveal: Announce the team being drawn
+            player_draw_part1 = (
+                f"Now drawing from the virtual pot... \n"
+                f"*TEAM*: *{escape_markdown_v2(team_name)}*\n"
+                f"*MANAGER*: \\@{escape_markdown_v2(username)}"
+            )
+            print(f"DEBUG: Sending draw part 1 for {team_name}: '{player_draw_part1}'")
+            await context.bot.send_message(
+                chat_id=GROUP_ID,
+                text=player_draw_part1,
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
+            await asyncio.sleep(5) # Suspenseful delay before revealing the group
+
+            # Part 2 of the reveal: Announce the assigned group
+            player_draw_part2 = f"And they will compete in... *Group {escape_markdown_v2(assigned_group)}*\\!"
+            print(f"DEBUG: Sending draw part 2 for {team_name} to group {assigned_group}: '{player_draw_part2}'")
+            await context.bot.send_message(
+                chat_id=GROUP_ID,
+                text=player_draw_part2,
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
+            
+            # Add player's display name to the list for the group summary
+            group_summary_list.append(f"{escape_markdown_v2(team_name)} \\(@{escape_markdown_v2(username)}\\)")
+
+            print(f"DEBUG: Announcing {team_name} in {assigned_group}.")
+
+            # Delay between individual player announcements within the same group
+            if i < len(player_ids_in_group) - 1: # No delay after the last player of a group
+                await asyncio.sleep(8) # Shorter delay between individual player reveals
+
+        # After all players for the current group are announced, send the full group summary
+        group_complete_message = f"The draw for *Group {escape_markdown_v2(group_name).upper()}* is complete\\! Here's the final lineup:"
+        await context.bot.send_message(
+            chat_id=GROUP_ID,
+            text=group_complete_message,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        await asyncio.sleep(3) # Short delay before the summary itself
+
+        group_summary_display = f"*Group {escape_markdown_v2(group_name).upper()} Final Lineup:*\n\n"
+        for idx, player_display in enumerate(group_summary_list):
+            group_summary_display += f"{idx + 1}\\. {player_display}\n"
+        
+        await context.bot.send_message(
+            chat_id=GROUP_ID,
+            text=group_summary_display,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        
+        # Longer delay before moving to the next group, but not after the very last group has been announced
+        if group_name != sorted_group_names[-1]:
+            await asyncio.sleep(15) # Longer delay between groups
+
+    # Crucial: SAVE STATE AFTER ALL ANNOUNCEMENTS ARE DONE
+    save_state("players", players_data) # Save players with their new group assignments
+    save_state("groups", allocated_groups) # Save the complete group structure
     print("DEBUG: All drawing announcements complete. Players and Groups state SAVED.")
 
-
-    # --- FIX: Escaped the exclamation mark after "complete!" ---
+    # Final summary message for the admin
     final_drawing_summary = "✅ Live group drawing complete\\! All teams have been announced\\." 
     await context.bot.send_message(
         chat_id=ADMIN_ID,
