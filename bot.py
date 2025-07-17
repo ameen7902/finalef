@@ -740,7 +740,7 @@ async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "🚫 The tournament has moved to the knockout stage\\. Group standings are no longer available\\.\n"
             "Use /fixtures to see *your* upcoming match, or */showknockout* to see all matches for the current stage\\.",
-            parse_mode=ParseMode.MARKDOWN_V2 # Ensure ParseMode.MARKDOWN_V2 is used here for escaping
+            parse_mode=ParseMode.MARKDOWN_V2
         )
         print(f"DEBUG: Group standings command blocked because tournament is in {current_stage}.")
         return
@@ -750,7 +750,7 @@ async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     groups_data = load_state("groups") # This holds player_ids grouped by group_name
 
     if not groups_data:
-        await update.message.reply_text("❌ Groups have not been formed yet.", parse_mode=ParseMode.MARKDOWN_V2) # Added parse_mode for consistency
+        await update.message.reply_text("❌ Groups have not been formed yet.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     all_standings = ""
@@ -761,47 +761,46 @@ async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
             player_info = players.get(p_id)
             if player_info:
                 stats = player_info.get("stats", {})
+                # Ensure team name is safe for MarkdownV2 before using
+                team_name_escaped = escape_markdown_v2(player_info.get('team', 'N/A'))
                 standings.append({
-                    "team": player_info.get('team', 'N/A'), # Use .get with default for safety
+                    "team_escaped": team_name_escaped, # Use the escaped version
                     "points": stats.get("points", 0),
                     "gd": stats.get("gd", 0),
                     "gf": stats.get("gf", 0),
                     "wins": stats.get("wins", 0),
                     "draws": stats.get("draws", 0),
-                    "losses": stats.get("losses", 0)
+                    "losses": stats.get("losses", 0),
+                    "played": stats.get("wins", 0) + stats.get("draws", 0) + stats.get("losses", 0) # Calculate played matches
                 })
 
+        # Sort by points, then GD, then GF (all descending)
         standings.sort(key=lambda x: (x['points'], x['gd'], x['gf']), reverse=True)
 
-        # Using f-strings and escape_markdown_v2 for consistent formatting
-        # Note: Your original format `Team | Pts | ...` might need careful escaping for `|` and ` `
-        # For simplicity, I'm just escaping the group name here.
+        # Using f-strings for formatting without monospace backticks
         group_text = f"📊 *{escape_markdown_v2(group_name.upper())} Standings:*\n"
-        group_text += "`Team        | Pts | GD | GF | W-D-L`\n" # Using backticks for table header for easier MarkdownV2
-        group_text += "`--------------------------------------`\n" # Using backticks for separator
+        # Header is now simpler or removed, as strict columns are hard without monospace
+        # If you still want a header, it's best as general text, not attempting strict alignment.
+        group_text += "`Team` | `P` | `W` | `D` | `L` | `GD` | `GF` | `Pts`\n" # A simplified, non-aligned header for clarity
+        group_text += "----------------------------------------------\n" # Separator
 
         for team_stat in standings:
-            team_display = (team_stat['team'] + "          ")[:10] # Pad and truncate
-            escaped_team_display = escape_markdown_v2(team_display) # Escape the padded/truncated team name
-
+            # Format each line concisely
+            # Note: without monospace, strict alignment will not work.
+            # We'll rely on the simplicity of the format.
             group_text += (
-                f"`{escaped_team_display:<10} | {team_stat['points']:<3} | {team_stat['gd']:<2} | {team_stat['gf']:<2} | "
-                f"{team_stat['wins']}-{team_stat['draws']}-{team_stat['losses']}`\n"
+                f"{team_stat['team_escaped']} "
+                f"\\({team_stat['wins']}\\-{team_stat['draws']}\\-{team_stat['losses']}\\) "
+                f"Pts:*{team_stat['points']}* GD:*{team_stat['gd']}* GF:*{team_stat['gf']}*\n"
+                # Using escaped parentheses and dashes for consistency with MarkdownV2
             )
-        group_text += "\n"
+        group_text += "\n" # Add a newline between groups
         all_standings += group_text
 
     if all_standings:
-        # Use ParseMode.MARKDOWN_V2 for consistency and safety with escaped strings
         await update.message.reply_text(all_standings, parse_mode=ParseMode.MARKDOWN_V2)
     else:
         await update.message.reply_text("❌ No standings available yet.", parse_mode=ParseMode.MARKDOWN_V2)
-
-
-# current_admin_matches = {} # Keep this if it's a global variable needed elsewhere
-# --- Helper function to update player statistics after a match --- # Keep this comment if relevant
-# This assumes the score for a match is reported only once.
-# Recalculating stats for overridden scores would require more complex logic. # Keep this comment if relevant
 def update_player_stats(players_data, player_id, opponent_id, player_score, opponent_score):
     # Ensure 'stats' dictionary exists for the player reporting
     if 'stats' not in players_data.get(player_id, {}):
