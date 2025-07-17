@@ -519,7 +519,7 @@ async def _perform_live_group_drawing(context, players_data, allocated_groups):
 
             # Direct reveal of the team and its assignment
             final_team_announcement = (
-                f"🥳 *PICK COMPLETE!* 🥳\n\n"
+                f"✅💥 *PICK COMPLETE\!* 💥✅\n\n"
                 f"⚽️ Team *{escape_markdown_v2(team_name)}* \\(@{escape_markdown_v2(username)}\\) "
                 f"is officially assigned to *Group {escape_markdown_v2(assigned_group)}*\\! 🏆"
             )
