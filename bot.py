@@ -1422,7 +1422,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     if group_stage_summary_qualified:
         summary_message_parts.append("*🏆 Qualified for Knockouts \(Confirmed✅\):*\n")
         for p_info in group_stage_summary_qualified:
-            summary_message_parts.append(f"• *{escape_markdown_v2(p_info.get('team', 'N/A'))}* \\({get_player_display_name(p_info)}\\)\n")
+            summary_message_parts.append(f" *{escape_markdown_v2(p_info.get('team', 'N/A'))}* \\({get_player_display_name(p_info)}\\)\n")
         summary_message_parts.append("\n")
 
     # Eliminated Players
@@ -1440,7 +1440,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
             player1_info = players.get(tied_players_ids[0], {})
             player2_info = players.get(tied_players_ids[1], {})
             summary_message_parts.append(
-                f"- *Group {escape_markdown_v2(group_name).upper()}:* "
+                f"\- *Group {escape_markdown_v2(group_name).upper()}:* "
                 f"{get_player_display_name(player1_info)} vs {get_player_display_name(player2_info)}\n"
             )
         summary_message_parts.append("\nPlease ensure these matches are played and results submitted via the dedicated tiebreaker command\\.\n")
