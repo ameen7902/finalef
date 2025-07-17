@@ -49,11 +49,14 @@ TEAM_LIST = [
 
 # Conversation state for PES name entry
 REGISTER_PES = 1
-def escape_markdown_v2(text: str) -> str:
+ddef escape_markdown_v2(text: str) -> str:
     """Helper function to escape markdown v2 special characters."""
+    print(f"DEBUG: escape_markdown_v2 - Input: '{text}'") # Add this line
     escape_chars = r'_*[]()~`>#+-=|{}.!'
-    return re.sub(r'([%s])' % re.escape(escape_chars), r'\\\1', text)
-# === FIREBASE UTILITIES ===
+    escaped_text = re.sub(r'([%s])' % re.escape(escape_chars), r'\\\1', text)
+    print(f"DEBUG: escape_markdown_v2 - Output: '{escaped_text}'") # Add this line
+    return escaped_text
+
 def init_firebase():
     global firebase_db_ref
     if firebase_db_ref:
