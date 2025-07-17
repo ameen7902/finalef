@@ -1538,9 +1538,8 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
 # Assuming this function is called when a tiebreaker result is submitted
 # You might make this an admin-only command or part of a ConversationHandler
 async def submit_tiebreaker_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # This example assumes the command comes with group_name, winner_id, loser_id
-    # e.g., /submit_tiebreaker_result GroupA <winner_id> <loser_id>
-    # In a real scenario, you'd likely use InlineKeyboard or a ConversationHandler
+    print(f"DEBUG: Raw command args received: {context.args}")
+    print(f"DEBUG: Number of args received: {len(context.args)}")
     
     args = context.args
     if not args or len(args) != 3:
