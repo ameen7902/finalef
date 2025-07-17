@@ -56,7 +56,50 @@ def escape_markdown_v2(text: str) -> str:
     escaped_text = re.sub(r'([%s])' % re.escape(escape_chars), r'\\\1', text)
     print(f"DEBUG: escape_markdown_v2 - Output: '{escaped_text}'") # Add this line
     return escaped_text
+from telegram import Update
+from telegram.ext import ContextTypes
+from telegram.constants import ParseMode # Make sure this is imported if not already
 
+# Assuming these are available from your setup or a 'utils' file:
+# from your_file_or_utils import load_state, escape_markdown_v2, get_player_display_name
+
+# Add this function to your code:
+async def players_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles the /players command to list all registered players and their teams.
+    """
+    players = load_state("players") # Assuming load_state function is available globally or imported
+
+    if not players:
+        await update.message.reply_text("There are no registered players yet\\. Use /register to join\\!", 
+                                        parse_mode=ParseMode.MARKDOWN_V2)
+        return
+
+    message_parts = ["*👥 Registered Players:*\n\n"]
+    
+    # Sort players by team name for a more organized list
+    # Convert player_id keys to integers if they are stored as strings (optional, but good practice)
+    sorted_player_ids = sorted(players.keys(), 
+                               key=lambda p_id: players[p_id].get('team', '').lower())
+
+    for player_id in sorted_player_ids:
+        player_info = players.get(player_id)
+        if player_info:
+            team_name = player_info.get('team', 'Unknown Team')
+            
+            # Use the helper function to get the player's display name
+            # Make sure get_player_display_name is defined and accessible
+            # (If you don't have get_player_display_name yet, I can provide it,
+            # but it was part of our previous discussion for handling usernames.)
+            player_display_name = get_player_display_name(player_info) 
+            
+            message_parts.append(
+                f"• *{escape_markdown_v2(team_name)}* \\({player_display_name}\\)\n"
+            )
+        
+    final_message = "".join(message_parts)
+
+    await update.message.reply_text(final_message, parse_mode=ParseMode.MARKDOWN_V2)
 def init_firebase():
     global firebase_db_ref
     if firebase_db_ref:
