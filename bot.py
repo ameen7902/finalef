@@ -1532,7 +1532,7 @@ async def handle_knockout_score(update: Update, context: ContextTypes.DEFAULT_TY
         # Notify the group about advancing to the next stage and new matches (Beautified)
         await context.bot.send_message(
             GROUP_ID, 
-            f"🌟 *ALL MATCHES CONCLUDED!* \\- *{stage_title_escaped}*\n" # Escaped hyphen
+            f"🌟 *ALL MATCHES CONCLUDED\!* \\- *{stage_title_escaped}*\n" # Escaped hyphen
             f"🥳 Advancing to {escape_markdown_v2(next_stage.replace('_', ' ').title())}\\! Get ready for the next round of battles\\! 💪", # Escaped exclamation mark
             parse_mode=ParseMode.MARKDOWN_V2
         )
