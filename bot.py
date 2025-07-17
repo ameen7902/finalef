@@ -344,7 +344,7 @@ def make_group_fixtures(groups: dict):
 # and performs the FINAL save of the complete fixtures data.
 async def start_tournament(update, context):
     user_id = str(update.effective_user.id)
-    
+    ADMIN_ID="7366894756"
     # Admin check
     if user_id != ADMIN_ID:
         await update.message.reply_text("❌ Only the admin can start the tournament\.", parse_mode=ParseMode.MARKDOWN_V2)
