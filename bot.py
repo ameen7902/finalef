@@ -1554,9 +1554,13 @@ async def submit_tiebreaker_result(update: Update, context: ContextTypes.DEFAULT
     fixtures_data = load_state("fixtures")
     tournament_state = load_state("tournament_state")
     players = load_state("players") # Load players to get team info
+    print(f"DEBUG: submit_tiebreaker_result called for group: {group_name}")
+    print(f"DEBUG: Current fixtures_data keys: {fixtures_data.keys()}")
+    if 'tiebreaker_fixtures' in fixtures_data:
+        print(f"DEBUG: Tiebreaker fixtures keys: {fixtures_data['tiebreaker_fixtures'].keys()}")
 
     if 'tiebreaker_fixtures' not in fixtures_data or group_name not in fixtures_data['tiebreaker_fixtures']:
-        await update.message.reply_text(f"❌ No pending tiebreaker match found for Group {group_name}\.")
+        await update.message.reply_text(f"❌ No pending tiebreaker match found for {group_name}\.")
         return
     
     tiebreaker_match = fixtures_data['tiebreaker_fixtures'][group_name]
