@@ -229,11 +229,7 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Please use /register in the tournament group.") 
         return 
     # Check if the maximum number of players has been reached
-    if len(players) >= MAX_PLAYERS:
-        await update.message.reply_text(
-            f"❌ Registration is now closed\! The tournament has reached its maximum of *{MAX_PLAYERS}* players\.",
-            parse_mode=ParseMode.MARKDOWN_V2 # Make sure ParseMode is imported from telegram.constants
-        )
+    
         return
     if is_locked(): 
         await update.message.reply_text("⚠️ Another player is registering. Please try again in a few minutes.") 
@@ -243,7 +239,11 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(user.id) in players: 
         await update.message.reply_text("✅ You are already registered.") 
         return 
-
+    if len(players) >= MAX_PLAYERS:
+        await update.message.reply_text(
+            f"❌ Registration is now closed\! The tournament has reached its maximum of *{MAX_PLAYERS}* players\.",
+            parse_mode=ParseMode.MARKDOWN_V2 # Make sure ParseMode is imported from telegram.constants
+        )
     tournament_state = load_state("tournament_state") 
     current_stage = tournament_state.get("stage", "registration") 
     if current_stage != "registration": 
