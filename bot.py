@@ -2170,6 +2170,7 @@ def setup_bot_handlers_sync(app_instance: Application) -> None:
     application.add_handler(CommandHandler("advance_group_round", advance_group_round))
     application.add_handler(CommandHandler("showknockout", show_knockout_status))
     application.add_handler(CommandHandler("mygroup", mygroup))
+    application.add_handler(CommandHandler("advance_to_knockout", advance_to_knockout))
     app_instance.add_handler(CommandHandler("submit_tiebreaker_result", submit_tiebreaker_result))
     # Dynamically add handlers for /matchX commands for admin scores
     for i in range(1, 101): # Assuming up to 100 matches
