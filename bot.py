@@ -100,6 +100,25 @@ async def players_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     final_message = "".join(message_parts)
 
     await update.message.reply_text(final_message, parse_mode=ParseMode.MARKDOWN_V2)
+
+def get_player_display_name(player_info):
+    """
+    Returns a MarkdownV2-escaped display name for a player,
+    prioritizing username (@mentionable), then full name, then "Anonymous Player".
+    """
+    username = player_info.get('username')
+    first_name = player_info.get('first_name')
+    last_name = player_info.get('last_name')
+
+    if username:
+        return f"\\@{escape_markdown_v2(username)}"
+    elif first_name:
+        full_name = escape_markdown_v2(first_name)
+        if last_name:
+            full_name += f" {escape_markdown_v2(last_name)}"
+        return full_name
+    else:
+        return "Anonymous Player"
 def init_firebase():
     global firebase_db_ref
     if firebase_db_ref:
