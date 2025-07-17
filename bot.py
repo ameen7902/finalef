@@ -1262,7 +1262,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     fixtures_data = load_state("fixtures")
     
     ADMIN_ID = "7366894756" # Define this properly!
-    GROUP_ID = -100        # Define this properly!
+    GROUP_ID = "-1002835703789"        # Define this properly!
 
     # --- NEW: Check if there are pending tiebreakers from previous runs ---
     pending_tiebreakers = tournament_state.get('pending_tiebreakers', {})
@@ -1300,7 +1300,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     # Initialize tiebreaker fixtures storage if it doesn't exist
     if 'tiebreaker_fixtures' not in fixtures_data:
         fixtures_data['tiebreaker_fixtures'] = {} # Stores {group_name: [player1_id, player2_id, None, None, 'pending']}
-
+    
     # 1. Calculate final group standings and determine qualifiers per group
     for group_name, group_matches in fixtures_data.get("group_stage", {}).items():
         print(f"DEBUG: Processing group: {group_name}")
