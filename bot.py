@@ -735,72 +735,93 @@ async def group_standings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tournament_state = load_state("tournament_state")
     current_stage = tournament_state.get("stage", "registration")
 
-    # --- NEW LOGIC TO DISABLE DURING KNOCKOUT STAGES ---
     if current_stage in ["round_of_16", "quarter_finals", "semi_finals", "final"]:
         await update.message.reply_text(
             "🚫 The tournament has moved to the knockout stage\\. Group standings are no longer available\\.\n"
             "Use /fixtures to see *your* upcoming match, or */showknockout* to see all matches for the current stage\\.",
             parse_mode=ParseMode.MARKDOWN_V2
         )
-        print(f"DEBUG: Group standings command blocked because tournament is in {current_stage}.")
         return
-    # --- END OF NEW LOGIC ---
 
     players = load_state("players")
-    groups_data = load_state("groups") # This holds player_ids grouped by group_name
+    groups_data = load_state("groups") 
 
     if not groups_data:
-        await update.message.reply_text("❌ Groups have not been formed yet.", parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text("❌ Groups have not been formed yet\\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     all_standings = ""
     for group_name in sorted(groups_data.keys()):
         player_ids = groups_data[group_name]
         standings = []
+        max_team_name_len = 0 # Track max length for dynamic padding
+
         for p_id in player_ids:
             player_info = players.get(p_id)
             if player_info:
                 stats = player_info.get("stats", {})
-                # Ensure team name is safe for MarkdownV2 before using
-                team_name_escaped = escape_markdown_v2(player_info.get('team', 'N/A'))
+                team_name = player_info.get('team', 'N/A')
+                team_name_escaped = escape_markdown_v2(team_name)
+                
+                # Update max_team_name_len
+                # Note: len(team_name_escaped) gives length of escaped string which can be > actual characters
+                # If your escape_markdown_v2 adds backslashes, you need to consider the visual length.
+                # A simple len(team_name) is usually sufficient for spacing calculations,
+                # as Telegram handles the display.
+                max_team_name_len = max(max_team_name_len, len(team_name)) 
+
                 standings.append({
-                    "team_escaped": team_name_escaped, # Use the escaped version
+                    "team_name_raw": team_name, # Keep raw for length calculation
+                    "team_escaped": team_name_escaped,
                     "points": stats.get("points", 0),
-                    "gd": stats.get("gd", 0),
-                    "gf": stats.get("gf", 0),
                     "wins": stats.get("wins", 0),
                     "draws": stats.get("draws", 0),
-                    "losses": stats.get("losses", 0),
-                    "played": stats.get("wins", 0) + stats.get("draws", 0) + stats.get("losses", 0) # Calculate played matches
+                    "losses": stats.get("losses", 0)
                 })
 
-        # Sort by points, then GD, then GF (all descending)
-        standings.sort(key=lambda x: (x['points'], x['gd'], x['gf']), reverse=True)
+        # Sort the standings
+        standings.sort(key=lambda x: (x['points'], x['wins'], x['draws']), reverse=True)
 
-        # Using f-strings for formatting without monospace backticks
+        # Set column widths. Add a small buffer to team name length.
+        team_col_width = max_team_name_len + 2 # Add 2 for a small buffer
+        stat_col_width = 3 # For W, D, L, Pts (accommodates up to 999)
+
+        # Build group text with monospace formatting
         group_text = f"📊 *{escape_markdown_v2(group_name.upper())} Standings:*\n"
-        # Header is now simpler or removed, as strict columns are hard without monospace
-        # If you still want a header, it's best as general text, not attempting strict alignment.
-        group_text += "`Team` \| `P` \| `W` \| `D` \| `L` \| `GD` \| `GF` \| `Pts`\n" # A simplified, non-aligned header for clarity
-        group_text += "\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\n" # Separator
+        group_text += "```\n" # Start monospace block
+
+        # Header for the table - dynamically padded
+        header_team = "Team".ljust(team_col_width)
+        header_wins = "W".center(stat_col_width)
+        header_draws = "D".center(stat_col_width)
+        header_losses = "L".center(stat_col_width)
+        header_pts = "Pts".center(stat_col_width)
+        
+        group_text += f"{header_team} | {header_wins} | {header_draws} | {header_losses} | {header_pts}\n"
+        
+        # Separator line - also dynamically sized
+        total_width = team_col_width + (stat_col_width + 3) * 4 # +3 for " | "
+        group_text += "-" * total_width + "\n"
 
         for team_stat in standings:
-            # Format each line concisely
-            # Note: without monospace, strict alignment will not work.
-            # We'll rely on the simplicity of the format.
+            # Pad each field for alignment within the monospace block
+            team_display = team_stat['team_name_raw'].ljust(team_col_width) # Use raw name for padding
+            wins_display = str(team_stat['wins']).rjust(stat_col_width)
+            draws_display = str(team_stat['draws']).rjust(stat_col_width)
+            losses_display = str(team_stat['losses']).rjust(stat_col_width)
+            points_display = str(team_stat['points']).rjust(stat_col_width)
+
             group_text += (
-                f"{team_stat['team_escaped']} "
-                f"\\({team_stat['wins']}\\-{team_stat['draws']}\\-{team_stat['losses']}\\) "
-                f"Pts:*{team_stat['points']}* GD:*{team_stat['gd']}* GF:*{team_stat['gf']}*\n"
-                # Using escaped parentheses and dashes for consistency with MarkdownV2
+                f"{team_display} | {wins_display} | {draws_display} | {losses_display} | {points_display}\n"
             )
+        group_text += "```\n" # End monospace block
         group_text += "\n" # Add a newline between groups
         all_standings += group_text
 
     if all_standings:
         await update.message.reply_text(all_standings, parse_mode=ParseMode.MARKDOWN_V2)
     else:
-        await update.message.reply_text("❌ No standings available yet.", parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text("❌ No standings available yet\\.", parse_mode=ParseMode.MARKDOWN_V2)
 def update_player_stats(players_data, player_id, opponent_id, player_score, opponent_score):
     # Ensure 'stats' dictionary exists for the player reporting
     if 'stats' not in players_data.get(player_id, {}):
