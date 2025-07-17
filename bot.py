@@ -462,7 +462,7 @@ async def _perform_live_group_drawing(context, players_data, allocated_groups):
     print("DEBUG: _perform_live_group_drawing function started. Will save state at the end.")
 
     initial_drawing_message = (
-        "✨ FIFA Tournament Live Drawing in progress... ✨\n\n"
+        "✨ FIFA Tournament Live Drawing in progress\.\.\. ✨\n\n"
         "Get ready for the exciting group reveals! Each team's destiny will be announced shortly\\. Stay tuned\\!"
     )
     
@@ -524,7 +524,7 @@ async def _perform_live_group_drawing(context, players_data, allocated_groups):
             await asyncio.sleep(5) # Suspenseful delay before revealing the group
 
             # Part 2 of the reveal: Announce the assigned group
-            player_draw_part2 = f"And they will compete in... *Group {escape_markdown_v2(assigned_group)}*\\!"
+            player_draw_part2 = f"And they will compete in\.\.\. *Group {escape_markdown_v2(assigned_group)}*\\!"
             print(f"DEBUG: Sending draw part 2 for {team_name} to group {assigned_group}: '{player_draw_part2}'")
             await context.bot.send_message(
                 chat_id=GROUP_ID,
