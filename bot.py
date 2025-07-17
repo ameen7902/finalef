@@ -344,28 +344,30 @@ def make_group_fixtures(groups: dict):
 # and performs the FINAL save of the complete fixtures data.
 async def start_tournament(update, context):
     user_id = str(update.effective_user.id)
-    ADMIN_ID="7366894756"
+    ADMIN_ID="7366894756" # Make sure ADMIN_ID is defined globally or passed if not a constant
+    
     # Admin check
     if user_id != ADMIN_ID:
-        await update.message.reply_text("❌ Only the admin can start the tournament\.", parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text("❌ Only the admin can start the tournament\\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     players = load_state("players")
     # Player count check
     if len(players) != 32:
-        await update.message.reply_text(f"❌ Need exactly 32 players to start the tournament\. Currently have {len(players)}\.", parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text(f"❌ Need exactly 32 players to start the tournament\\. Currently have {len(players)}\\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     tournament_state = load_state("tournament_state")
     # Tournament stage check
     if tournament_state.get("stage") != "registration":
-        await update.message.reply_text("❌ The tournament has already started or is in an advanced stage\. Use /reset_tournament to restart\.", parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text("❌ The tournament has already started or is in an advanced stage\\. Use /reset_tournament to restart\\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     # Initial message to admin (before drawing starts)
-    await update.message.reply_text("🎉 The tournament is starting\! Initiating live group drawing\.\.\.", parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text("🎉 The tournament is starting\\! Initiating live group drawing\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
 
     # 1. Make groups and get the group assignments back IN MEMORY
+    # make_groups function is assumed to be defined elsewhere and correctly assigns groups
     players_with_groups, groups_structure = await make_groups(context) 
 
     # 2. Perform the live drawing announcements based on the allocated groups
@@ -373,7 +375,8 @@ async def start_tournament(update, context):
     await _perform_live_group_drawing(context, players_with_groups, groups_structure)
 
     # 3. Generate group fixtures using the returned groups data (groups_structure is the final one)
-    group_stage_fixtures = make_group_fixtures(groups_structure) # Assuming make_group_fixtures is defined elsewhere
+    # make_group_fixtures is assumed to be defined elsewhere
+    group_stage_fixtures = make_group_fixtures(groups_structure) 
 
     # 4. Assemble the COMPLETE fixtures_data object
     fixtures_data = {
@@ -395,14 +398,14 @@ async def start_tournament(update, context):
     save_state("tournament_state", tournament_state)
 
     # Final messages to admin and group chat after everything is done (group drawing and fixtures)
-    final_message_for_admin = "✅ Group drawing complete and fixtures generated\! Tournament is officially in the Group Stage\!"
+    final_message_for_admin = "✅ Group drawing complete and fixtures generated\\! Tournament is officially in the Group Stage\\!"
     await update.message.reply_text(final_message_for_admin, parse_mode=ParseMode.MARKDOWN_V2)
     
     # Send a general announcement to the group chat (if you have one)
-    if 'GROUP_ID' in globals() and GROUP_ID:
+    if 'GROUP_ID' in globals() and GROUP_ID: # Make sure GROUP_ID is defined globally if used
         await context.bot.send_message(
             GROUP_ID,
-            "🏆 The tournament has officially begun\! Group stage fixtures generated\! Use /fixtures to see your match schedule and /mygroup for your group's details\.",
+            "🏆 The tournament has officially begun\\! Group stage fixtures generated\\! Use /fixtures to see your match schedule and /mygroup for your group's details\\.",
             parse_mode=ParseMode.MARKDOWN_V2
         )
     
