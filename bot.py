@@ -160,64 +160,41 @@ async def addrule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_state("rules_list", rules_list)
     await update.message.reply_text("✅ Rule added.")
 
-async def players_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    players = load_state("players")
-
-    if not players:
-        await update.message.reply_text("❌ No players have registered yet.")
-        return
-
-    reply = "👥 Registered Players:\n\n"
-    for p in players.values():
-        reply += f"{p['team']} — @{p['username']} (🎮 {p['pes']})\n"
-
-    await update.message.reply_text(reply)
-
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
     if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("❌ Please use /register in the tournament group\.")
+        await update.message.reply_text("❌ Please use /register in the tournament group.")
         return
 
     if is_locked():
-        await update.message.reply_text("⚠️ Another player is registering\. Please try again in a few minutes\.")
+        await update.message.reply_text("⚠️ Another player is registering. Please try again in a few minutes.")
         return
 
     players = load_state("players")
     if str(user.id) in players:
-        await update.message.reply_text("✅ You are already registered\.")
+        await update.message.reply_text("✅ You are already registered.")
         return
 
     tournament_state = load_state("tournament_state")
     current_stage = tournament_state.get("stage", "registration")
     if current_stage != "registration":
-        await update.message.reply_text("❌ Registration is closed\. The tournament has already started\.")
+        await update.message.reply_text("❌ Registration is closed. The tournament has already started.")
         return
 
-    # --- NEW CHECK: User must have a username ---
-    if not user.username:
-        await update.message.reply_text(
-            f"🚫 To participate in this tournament\, you need to have a Telegram username\. "
-            f"Please go to your Telegram *Settings* -> *Edit Profile* -> *Username*\, set one, and then try `/register` again\.",
-            parse_mode=ParseMode.MARKDOWN_V2 # Use MarkdownV2 for bold text
-        )
-        return # Stop the registration process here if no username
-
-    # --- Rest of your existing code (only proceeds if user has a username) ---
     lock_user(user.id)
 
     try:
         await context.bot.send_message(
             chat_id=user.id,
-            text="📝 Let's get you registered\!\nPlease select your national team:",
+            text="📝 Let's get you registered!\nPlease select your national team:",
             reply_markup=InlineKeyboardMarkup(build_team_buttons())
         )
-        await update.message.reply_text("📩 Check your DM to complete registration\.")
+        await update.message.reply_text("📩 Check your DM to complete registration.")
     except Exception as e:
         print(f"Error sending DM for registration: {e}")
-        await update.message.reply_text("❌ Couldn't send DM\. Please start the bot first: @e_tournament_bot")
-    finally: # Use finally to ensure unlock even if DM fails
+        await update.message.reply_text("❌ Couldn't send DM. Please start the bot first: @e_tournament_bot")
+    finally: # Ensure unlock even if DM fails
         unlock_user()
 
 def build_team_buttons():
