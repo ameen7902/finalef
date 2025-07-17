@@ -373,7 +373,7 @@ async def start_tournament(update, context):
     # make_groups function is assumed to be defined elsewhere and correctly assigns groups
     players_with_groups, groups_structure = await make_groups(context) 
 
-    # 2. Perform the live drawing announcements based on the allocated groups
+    # 2. Perform the live drawing s based on the allocated groups
     # State (players and groups) will be saved INSIDE _perform_live_group_drawing after all announcements
     await _perform_live_group_drawing(context, players_with_groups, groups_structure)
 
@@ -465,7 +465,7 @@ async def _perform_live_group_drawing(context, players_data, allocated_groups):
                               "Each team's group will be announced shortly\\. Stay tuned\\!"
     
     await context.bot.send_message(
-        chat_id=ADMIN_ID, 
+        chat_id=GROUP_ID, 
         text=initial_drawing_message,
         parse_mode=ParseMode.MARKDOWN_V2
     )
@@ -483,7 +483,7 @@ async def _perform_live_group_drawing(context, players_data, allocated_groups):
         )
         print(f"DEBUG: Sending announcement for {team_name} to Telegram: '{announcement_text}'")
         await context.bot.send_message(
-            chat_id=ADMIN_ID,
+            chat_id=GROUP_ID,
             text=announcement_text,
             parse_mode=ParseMode.MARKDOWN_V2
         )
