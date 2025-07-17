@@ -458,59 +458,42 @@ async def _perform_live_group_drawing(context, players_data, allocated_groups):
     initial_drawing_message = "✨ FIFA Tournament Live Drawing in progress... ✨\n\n" \
                               "Each team's group will be announced shortly\\. Stay tuned\\!"
     
-    # Send initial message to admin
     await context.bot.send_message(
         chat_id=ADMIN_ID, 
         text=initial_drawing_message,
         parse_mode=ParseMode.MARKDOWN_V2
     )
-    # Send initial message to public group (uncomment and set GROUP_ID if you use one)
-    # if 'GROUP_ID' in globals() and GROUP_ID: # Check if GROUP_ID is defined and not None/empty
-    #     await context.bot.send_message(
-    #        chat_id=GROUP_ID,
-    #        text=initial_drawing_message,
-    #        parse_mode=ParseMode.MARKDOWN_V2
-    #    )
 
     for i, player_id in enumerate(player_ids_for_drawing):
         player_info = players_data.get(player_id, {})
         team_name = player_info.get('team', 'N/A')
         username = player_info.get('username', 'N/A')
-        assigned_group = player_info.get('group', 'N/A Group') # Get the group already assigned by make_groups (in memory)
+        assigned_group = player_info.get('group', 'N/A Group') 
 
         announcement_text = (
-            f"🎉 *ANNOUNCEMENT* 🎉\n"
+            f"🎉 *ANNOUNCEMENT* 🎉\n" # This ! is fine as it's part of the emoji/bold combo
             f"Team *{escape_markdown_v2(team_name)}* \\(@{escape_markdown_v2(username)}\\) "
-            f"has been officially allotted to *{escape_markdown_v2(assigned_group)}*\\!"
+            f"has been officially allotted to *{escape_markdown_v2(assigned_group)}*\\!" # This ! is correctly escaped
         )
         
-        # Send announcement to admin
         await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=announcement_text,
             parse_mode=ParseMode.MARKDOWN_V2
         )
-        # Send announcement to public group (uncomment if you use one)
-        # if 'GROUP_ID' in globals() and GROUP_ID:
-        #    await context.bot.send_message(
-        #        chat_id=GROUP_ID,
-        #        text=announcement_text,
-        #        parse_mode=ParseMode.MARKDOWN_V2
-        #    )
 
         print(f"DEBUG: Announcing {team_name} in {assigned_group}.")
 
         if i < len(player_ids_for_drawing) - 1: 
-            await asyncio.sleep(20) # 20-second delay
+            await asyncio.sleep(20)
 
-    # --- Crucial: SAVE STATE AFTER ALL ANNOUNCEMENTS ARE DONE ---
-    save_state("players", players_data) # Save players with their new group assignments
-    save_state("groups", allocated_groups) # Save the group structure
+    save_state("players", players_data)
+    save_state("groups", allocated_groups)
     print("DEBUG: All drawing announcements complete. Players and Groups state SAVED.")
 
 
-    # Final summary message for the admin (can be customized or removed if the main start_tournament sends one)
-    final_drawing_summary = "✅ Live group drawing complete! All teams have been announced."
+    # --- FIX: Escaped the exclamation mark after "complete!" ---
+    final_drawing_summary = "✅ Live group drawing complete\\! All teams have been announced\\." 
     await context.bot.send_message(
         chat_id=ADMIN_ID,
         text=final_drawing_summary,
