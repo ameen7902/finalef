@@ -588,7 +588,7 @@ async def fixtures(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_text += f"📅 Your Knockout Match \- {player_team_escaped_header} \({stage_title_escaped_header}\)\n\n"
 
         for match_index, match in enumerate(knockout_matches):
-            if not isinstance(match, list) or len(match) < 4: # Assuming knockout matches are 4 elements
+            if not isinstance(match, list) or len(match) < 5:# Assuming knockout matches are 4 elements
                 print(f"WARNING: Malformed knockout match data (too short) in Firebase for stage {current_stage}, Match index {match_index}: {match}")
                 continue
 
@@ -1026,7 +1026,11 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     tournament_state = load_state("tournament_state")
     players = load_state("players")
     fixtures_data = load_state("fixtures")
-    # ADMIN_ID="7366894756"
+    # ADMIN_ID="7366894756" # Make sure ADMIN_ID is defined elsewhere, e.g., globally
+    ADMIN_ID = "7366894756" # Temporary for demonstration, define this properly!
+    GROUP_ID = -100 # Placeholder, define this properly!
+
+
     # Ensure tournament is in 'group_stage_completed' before proceeding
     if tournament_state.get("stage") != "group_stage_completed":
         print(f"DEBUG: advance_to_knockout called, but tournament state is not 'group_stage_completed'. Current stage: {tournament_state.get('stage')}. Aborting.")
@@ -1041,7 +1045,7 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
         for match in group_matches:
             # Ensure match data is complete before processing (player1, player2, score1, score2, round)
             if len(match) == 5 and all(x is not None for x in [match[0], match[1], match[2], match[3]]):
-                p1_id, p2_id, score1, score2, _ = match
+                p1_id, p2_id, score1, score2, _ = match # _ here is the round number, which is fine
                 
                 # Initialize player stats if not present
                 if p1_id not in group_players:
@@ -1074,7 +1078,6 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
                     group_players[p2_id]['points'] += 1
             else:
                 print(f"WARNING: Skipping incomplete match in group stage standings calculation: {match}")
-
 
         # Apply updated stats back to the main players dictionary
         for p_id, stats in group_players.items():
@@ -1127,45 +1130,28 @@ async def advance_to_knockout(context: ContextTypes.DEFAULT_TYPE):
     # Take only the top N players for the knockout stage
     top_n_players = qualified_player_ids_for_pairing[:num_knockout_players_needed]
 
-    # Implement a proper seeding algorithm for a Round of 16
-    # For a classic 16-team bracket: 1st vs 16th, 8th vs 9th, 5th vs 12th, 4th vs 13th, etc.
-    # This requires specific indexing from the sorted list.
-    
-    # Example for 16 players (1st to 16th seed):
-    # Match 1: Seed 1 vs Seed 16
-    # Match 2: Seed 8 vs Seed 9
-    # Match 3: Seed 5 vs Seed 12
-    # Match 4: Seed 4 vs Seed 13
-    # Match 5: Seed 3 vs Seed 14
-    # Match 6: Seed 6 vs Seed 11
-    # Match 7: Seed 7 vs Seed 10
-    # Match 8: Seed 2 vs Seed 15
-
     knockout_fixtures_r16 = []
     
     # Manual pairing based on seeding (adjust if your seeding logic is different)
     if num_knockout_players_needed == 16:
         seeds = top_n_players # top_n_players is already sorted by rank (seed)
-        knockout_fixtures_r16.append([seeds[0], seeds[15], None, None]) # 1 vs 16
-        knockout_fixtures_r16.append([seeds[7], seeds[8], None, None])  # 8 vs 9
-        knockout_fixtures_r16.append([seeds[4], seeds[11], None, None]) # 5 vs 12
-        knockout_fixtures_r16.append([seeds[3], seeds[12], None, None]) # 4 vs 13
-        knockout_fixtures_r16.append([seeds[2], seeds[13], None, None]) # 3 vs 14
-        knockout_fixtures_r16.append([seeds[5], seeds[10], None, None]) # 6 vs 11
-        knockout_fixtures_r16.append([seeds[6], seeds[9], None, None])  # 7 vs 10
-        knockout_fixtures_r16.append([seeds[1], seeds[14], None, None]) # 2 vs 15
+        # ADDED 0 AS THE FIFTH ELEMENT FOR KNOCKOUT MATCHES
+        knockout_fixtures_r16.append([seeds[0], seeds[15], None, None, 0]) # 1 vs 16
+        knockout_fixtures_r16.append([seeds[7], seeds[8], None, None, 0])  # 8 vs 9
+        knockout_fixtures_r16.append([seeds[4], seeds[11], None, None, 0]) # 5 vs 12
+        knockout_fixtures_r16.append([seeds[3], seeds[12], None, None, 0]) # 4 vs 13
+        knockout_fixtures_r16.append([seeds[2], seeds[13], None, None, 0]) # 3 vs 14
+        knockout_fixtures_r16.append([seeds[5], seeds[10], None, None, 0]) # 6 vs 11
+        knockout_fixtures_r16.append([seeds[6], seeds[9], None, None, 0])  # 7 vs 10
+        knockout_fixtures_r16.append([seeds[1], seeds[14], None, None, 0]) # 2 vs 15
     elif num_knockout_players_needed == 8: # Example for Quarter Finals directly
         seeds = top_n_players
-        knockout_fixtures_r16.append([seeds[0], seeds[7], None, None]) # 1 vs 8
-        knockout_fixtures_r16.append([seeds[3], seeds[4], None, None]) # 4 vs 5
-        knockout_fixtures_r16.append([seeds[2], seeds[5], None, None]) # 3 vs 6
-        knockout_fixtures_r16.append([seeds[1], seeds[6], None, None]) # 2 vs 7
+        # ADDED 0 AS THE FIFTH ELEMENT FOR KNOCKOUT MATCHES
+        knockout_fixtures_r16.append([seeds[0], seeds[7], None, None, 0]) # 1 vs 8
+        knockout_fixtures_r16.append([seeds[3], seeds[4], None, None, 0]) # 4 vs 5
+        knockout_fixtures_r16.append([seeds[2], seeds[5], None, None, 0]) # 3 vs 6
+        knockout_fixtures_r16.append([seeds[1], seeds[6], None, None, 0]) # 2 vs 7
     # Add more `elif` blocks here for other bracket sizes if needed
-
-    # --- THIS IS THE CRITICAL FIX ---
-    # Ensure all generated matches include the two player IDs followed by two None placeholders for scores.
-    # The example above already includes `None, None`. If your original logic was different,
-    # ensure it now appends `[player1_id, player2_id, None, None]`
 
     fixtures_data["round_of_16"] = knockout_fixtures_r16 # Store for Round of 16
     save_state("fixtures", fixtures_data)
