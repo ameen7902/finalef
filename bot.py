@@ -224,13 +224,18 @@ async def addrule(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE): 
     user = update.effective_user 
-    MAX_PLAYERS = 32 # You can change 32 to your desired maximum number of players
+    MAX_PLAYERS = 32 # This is correctly placed here, or ideally at the top of your file
+
     if update.effective_chat.type not in ["group", "supergroup"]: 
         await update.message.reply_text("❌ Please use /register in the tournament group.") 
         return 
+
+    # --- REMOVE THIS INCORRECT LINE ---
     # Check if the maximum number of players has been reached
-    
-        return
+    # 
+    #     return 
+    # --- END REMOVAL ---
+
     if is_locked(): 
         await update.message.reply_text("⚠️ Another player is registering. Please try again in a few minutes.") 
         return 
@@ -239,11 +244,16 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(user.id) in players: 
         await update.message.reply_text("✅ You are already registered.") 
         return 
+
+    # --- THIS IS THE CORRECT LOCATION AND FIX FOR THE RETURN STATEMENT ---
     if len(players) >= MAX_PLAYERS:
         await update.message.reply_text(
             f"❌ Registration is now closed\! The tournament has reached its maximum of *{MAX_PLAYERS}* players\.",
             parse_mode=ParseMode.MARKDOWN_V2 # Make sure ParseMode is imported from telegram.constants
         )
+        return # <--- THIS IS THE MISSING RETURN THAT STOPS THE FUNCTION
+    # --- END OF FIX ---
+
     tournament_state = load_state("tournament_state") 
     current_stage = tournament_state.get("stage", "registration") 
     if current_stage != "registration": 
