@@ -13,6 +13,7 @@ from telegram.ext import (
     CommandHandler, CallbackQueryHandler, MessageHandler, filters,
     ContextTypes, ConversationHandler
 )
+import math
 from collections import defaultdict # Ensure this is imported
 import itertools # Add this import for combination generation
 import html # <--- ADD THIS IMPORT at the top of your bot.py file
