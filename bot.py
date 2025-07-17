@@ -511,7 +511,7 @@ async def _perform_live_group_drawing(context, players_data, allocated_groups):
 
             # Part 1 of the reveal: Announce the team being drawn
             player_draw_part1 = (
-                f"Now drawing from the virtual pot... \n"
+                f"Now drawing from the virtual pot\.\. \n"
                 f"*TEAM*: *{escape_markdown_v2(team_name)}*\n"
                 f"*MANAGER*: \\@{escape_markdown_v2(username)}"
             )
